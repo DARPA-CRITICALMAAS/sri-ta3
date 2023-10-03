@@ -1,0 +1,13 @@
+# srimeta.yaml
+sriProjects:
+- '101465.001.BASE.01.0001'
+
+sriContacts:
+- 'angel.daruna@sri.com'
+- 'han-pang.chiu@sri.com'
+- 'vasily.zadorozhnyy@sri.com'
+
+description: 'DAPRA AIE-CriticalMAAS TA3'
+
+sriOrgs:
+- '1.130'
