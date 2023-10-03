@@ -1,0 +1,95 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: ${NAMESPACE}
+  name: ${PROJECT_NAME}${JOB_TAG}
+  labels:
+    app: ${PROJECT_NAME}${JOB_TAG}
+    type: ${MODE}
+spec:
+  template:
+    metadata:
+      labels:
+        app: ${PROJECT_NAME}${JOB_TAG}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: gpuType # A5000 or 2080Ti
+                operator: In
+                values:
+                - ${GPU_TYPE}
+              # - key: kubernetes.io/hostname
+              #   operator: In
+              #   values:
+              #   - cse-k8s-cvt-011.k8s.sri.com
+
+      restartPolicy: Never
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: rw-vol
+          persistentVolumeClaim:
+            claimName: ${RW_VOLUME}
+        - name: ro-vol
+          persistentVolumeClaim:
+            claimName: ${RO_VOLUME}
+      imagePullSecrets:
+      - name: ${SECRET}
+      containers:
+        - name: ${PROJECT_NAME}
+          image: ${REPO_HOST}/${REPO}:${PROJECT_NAME}-${USER}-v${VERSION}
+
+          workingDir: /workspace
+          resources:
+            requests:
+              memory: ${TOTAL_MEM}Gi
+              cpu: ${TOTAL_CPU}
+              nvidia.com/gpu: ${NGPU}
+            limits:
+              memory: ${TOTAL_MEM}Gi
+              cpu: ${TOTAL_CPU}
+              nvidia.com/gpu: ${NGPU}
+
+          ports: # List of ports to expose from the container (can be forwarded using k9s to local machine)
+            - containerPort: 8888
+              name: notebook-port
+
+          volumeMounts:
+            # Working directory for source code
+            - name: rw-vol
+              subPath: work_dirs/${USER}/code/${SRC_PATH}
+              mountPath: /workspace/src
+
+            # Working directory for config files
+            - name: rw-vol
+              subPath: work_dirs/${USER}/code/${CONFIG_PATH}
+              mountPath: /workspace/configs
+            
+            # Working directory for scripts
+            - name: rw-vol
+              subPath: work_dirs/${USER}/code/${SCRIPTS_PATH}
+              mountPath: /workspace/scripts
+            
+            # shared directory for storing data
+            - name: ro-vol
+              subPath: data
+              mountPath: /workspace/data
+
+            # Working directory for checkpoints, output, etc.
+            - name: rw-vol
+              subPath: work_dirs/${USER}/logs
+              mountPath: /workspace/logs
+
+            # Virtual memory
+            - name: dshm
+              mountPath: /dev/shm
+
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
