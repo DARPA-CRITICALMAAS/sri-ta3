@@ -34,7 +34,7 @@ mkdir k8s-data
 # next, we'll mount the datalake folders that hosts the code, logs, and data - which k8s will have access to
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) //datalake-pr-smb.sri.com/vt-open/criticalmaas-ta3/k8s/${USER}/code ./k8s-code
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) //datalake-pr-smb.sri.com/vt-open/criticalmaas-ta3/k8s/${USER}/logs ./k8s-logs
-sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) //datalake-pr-smb.sri.com/vt-open/criticalmaas-ta3/k8s/${USER}/code ./k8s-data
+sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) //datalake-pr-smb.sri.com/vt-open/criticalmaas-ta3/data ./k8s-data
 # next we'll grab the code from the gitlab repo and place into the newly generated code folder
 cd ./k8s-code
 git clone https://gitlab.sri.com/criticalmaas-ta3/modeling.git
