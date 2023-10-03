@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # the namespace created for your project
-export NAMESPACE="criticalmaas"
+export NAMESPACE="criticalmaas-ta3"
 
 ################################################
 # variables used in docker build/push script
@@ -9,7 +9,7 @@ export NAMESPACE="criticalmaas"
 # your project name
 export PROJECT_NAME="cmaas-ta3"
 export JOB_TAG= # meaninful name for THIS job - e.g. "-angel-dev"
-export REPO_HOST= # your docker repo that contains images - e.g. "docker.io/adaruna3"
+export REPO_HOST="open.docker.sarnoff.com"
 # docker containers will be tagged with your e##### and version
 export VERSION=0.0
 ################################################
