@@ -44,6 +44,7 @@ cd ..
 First, edit the `project_vars.sh` file to meet your needs. You can set it up to either use artifactory as a repository or a personal docker repo. With the `project_vars.sh` properly setup, the following can be run.
 ```bash
 # builds the docker image and pushes to the repo
+cd ./k8s-code
 bash docker_build_push.sh
 # starts a docker container on k8s
 bash run_k8s.sh

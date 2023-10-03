@@ -13,8 +13,6 @@ tensorboardx
 rasterio>=1.2.10,<2.0.0
 geopandas>=0.12.2,<1.0.0
 fiona>=1.8.22,<2.0.0
-gdal>=3.0.2,<4.0.0
-geos>=3.8.0,<4.0.0
 shapely
 s2sphere==0.2.5
 # --------- others --------- #

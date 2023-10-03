@@ -12,10 +12,13 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
+# installs GDAL
+RUN conda install -c conda-forge "gdal>=3.0.2, <4.0.0"
+
 # Install dependencies
 COPY requirements.txt /
-RUN pip install -r /requirements.txt
-RUN pip cache remove *
+RUN pip3 install -r /requirements.txt
+RUN pip3 cache remove *
 
 # Install .autoenv for automatic conda env activation and tab completion
 RUN echo "autoenv() { [[ -f \"\$PWD/.autoenv\" ]] && source .autoenv ; } ; cd() { builtin cd \"\$@\" ; autoenv ; } ; autoenv" >> ~/.bashrc
