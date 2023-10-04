@@ -61,6 +61,9 @@ python src/train.py trainer=cpu
 
 # train on GPU
 python src/train.py trainer=gpu
+
+# train on multi-GPU - AVOID (needs debug)
+python src/train.py trainer=ddp
 ```
 
 Train model with chosen experiment configuration from [configs/experiment/](configs/experiment/)
@@ -73,4 +76,10 @@ You can override any parameter from command line like this
 
 ```bash
 python src/train.py trainer.max_epochs=20 data.batch_size=64
+```
+
+You can test an existing checkpoint like this
+
+```bash
+python src/test.py ckpt_path=[PATH_TO_CHECKPOINT/*.ckpt]
 ```

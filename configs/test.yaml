@@ -13,7 +13,7 @@ defaults:
   - hydra: default.yaml
 
 # task name, determines output directory path
-task_name: "test"
+task_name: "cmaasta3-test"
 
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
@@ -23,7 +23,7 @@ task_name: "test"
 tags: ["test"]
 
 # passing checkpoint path is necessary for evaluation
-ckpt_path: ???
+ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
 seed: 3

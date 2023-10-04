@@ -61,17 +61,17 @@ spec:
           volumeMounts:
             # Working directory for source code
             - name: rw-vol
-              subPath: work_dirs/${USER}/code/${SRC_PATH}
+              subPath: ${USER}/code/${SRC_PATH}
               mountPath: /workspace/src
 
             # Working directory for config files
             - name: rw-vol
-              subPath: work_dirs/${USER}/code/${CONFIG_PATH}
+              subPath: ${USER}/code/${CONFIG_PATH}
               mountPath: /workspace/configs
             
             # Working directory for scripts
             - name: rw-vol
-              subPath: work_dirs/${USER}/code/${SCRIPTS_PATH}
+              subPath: ${USER}/code/${SCRIPTS_PATH}
               mountPath: /workspace/scripts
             
             # shared directory for storing data
@@ -81,7 +81,7 @@ spec:
 
             # Working directory for checkpoints, output, etc.
             - name: rw-vol
-              subPath: work_dirs/${USER}/logs
+              subPath: ${USER}/logs
               mountPath: /workspace/logs
 
             # Virtual memory
