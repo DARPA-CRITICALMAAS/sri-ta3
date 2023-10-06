@@ -26,3 +26,5 @@ tqdm
 pandas
 jupyterlab
 matplotlib
+glob2
+numpy
