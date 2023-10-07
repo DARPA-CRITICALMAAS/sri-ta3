@@ -69,7 +69,7 @@ python src/train.py trainer=ddp
 Train model with chosen experiment configuration from [configs/experiment/](configs/experiment/)
 
 ```bash
-python src/train.py experiment=experiment_name.yaml
+python src/train.py experiment=example
 ```
 
 You can override any parameter from command line like this
