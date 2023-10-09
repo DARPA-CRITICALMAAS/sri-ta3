@@ -109,7 +109,8 @@ class TIFFDataModule(LightningDataModule):
         if not self.data_train or not self.data_val or not self.data_test:
             self.data_train = TiffDataset(
                 tif_dir=self.hparams.tif_dir, 
-                patch_size=self.hparams.patch_size
+                patch_size=self.hparams.patch_size,
+                transformation=transforms.Compose([transforms.ToTensor()])
             )
             self.data_train, self.data_test = spatial_cross_val_split(self.data_train, k=6, nbins=36) # probably want to expose 
             self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually

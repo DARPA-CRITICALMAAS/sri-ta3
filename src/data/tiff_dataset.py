@@ -28,7 +28,7 @@ class TiffDataset(Dataset):
         tif_dir: str = "/workspace/data/",
         patch_size: int = 33,
         patch_df: Union[pd.DataFrame, None] = None,
-        # transformation: Union[tv.transforms.Compose, None] = None,
+        transformation: Union[tv.transforms.Compose, None] = None,
     ):
         # load the raw tif files
         self.tif_dir = tif_dir
@@ -40,6 +40,8 @@ class TiffDataset(Dataset):
 
         # load a valid patch df for each tif
         self.patch_df = self._load_valid_patch_dfs() if patch_df is None else patch_df
+
+        self.tfm = transformation
 
     def _load_valid_patch_dfs(self):
         # loads or generates df indicating which tif patches are VALID
@@ -88,7 +90,7 @@ class TiffDataset(Dataset):
         col, row, label, source_tif = self.patch_df.loc[idx, ["x", "y", "label", "tif_file"]]
         patch = self.tifs[source_tif].read(window=rio.windows.Window(col, row, self.patch_size, self.patch_size))[:-1,:,:]
         # need to add transforms where appropriate
-        return patch, label
+        return self.tfm(patch), label
 
 
 def validate_patches(chunk, patch_size, tif_file):
@@ -147,9 +149,19 @@ def spatial_cross_val_split(
     ds_df = pd.merge(ds_df, bins_df, on=f"{split_col}_bin")
     # split into train / test data
     test_df = ds_df[ds_df["group"] == eval_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True)
-    test_ds = TiffDataset(ds.tif_dir, ds.patch_size, test_df)
+    test_ds = TiffDataset(
+        tif_dir=ds.tif_dir, 
+        patch_size=ds.patch_size, 
+        patch_df=test_df,
+        transformation=ds.tfm
+    )
     ds_df = ds_df[ds_df["group"] != eval_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True)
-    ds = TiffDataset(ds.tif_dir, ds.patch_size, ds_df)
+    ds = TiffDataset(
+        tif_dir=ds.tif_dir, 
+        patch_size=ds.patch_size, 
+        patch_df=ds_df,
+        transformation=ds.tfm
+    )
     return ds, test_ds
 
 
