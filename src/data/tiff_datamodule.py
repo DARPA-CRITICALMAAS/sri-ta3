@@ -110,7 +110,10 @@ class TIFFDataModule(LightningDataModule):
             self.data_train = TiffDataset(
                 tif_dir=self.hparams.tif_dir, 
                 patch_size=self.hparams.patch_size,
-                transformation=transforms.Compose([transforms.ToTensor()])
+                transformation=transforms.Compose([transforms.ToTensor(), 
+                                                    transforms.ConvertImageDtype(dtype=torch.half), 
+                                                    transforms.Lambda(lambda x: torch.permute(x, (1,2,0)))]
+                )
             )
             self.data_train, self.data_test = spatial_cross_val_split(self.data_train, k=6, nbins=36) # probably want to expose 
             self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually
