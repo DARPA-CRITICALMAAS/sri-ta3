@@ -1,0 +1,40 @@
+# @package _global_
+
+defaults:
+  - override /data: mvt_tiff.yaml
+  - override /model: mvt_cnn.yaml
+  - override /callbacks: default
+  - override /trainer: default
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["mvt", "cnn_net"]
+
+seed: 1234
+
+trainer:
+  min_epochs: 10
+  max_epochs: 10
+  gradient_clip_val: 0.5
+
+model:
+  optimizer:
+    lr: 0.001
+  net:
+    w: 33
+    h: 33
+    num_input_channels: 1
+    num_output_classes : 1
+  compile: false
+
+data:
+  batch_size: 128
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "mvt_cnn"
+    name: "cnn3d_debug_01"
+  aim:
+    experiment: "mvt_cnn"

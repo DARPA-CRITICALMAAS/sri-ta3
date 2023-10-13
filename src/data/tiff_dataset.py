@@ -6,6 +6,10 @@ from functools import partial
 import multiprocessing as mp
 from tqdm import tqdm
 from copy import deepcopy
+import torch
+
+import fcntl
+from multiprocessing import Process, Lock
 
 import rasterio as rio
 import rasterio.windows
@@ -32,10 +36,17 @@ class TiffDataset(Dataset):
     ):
         # load the raw tif files
         self.tif_dir = tif_dir
+
         self.tifs = {
             tif_file: rio.open(tif_file) 
             for tif_file in glob(str(Path(tif_dir) / Path("*.tif")))
         }
+        # self.tifs = {}
+        # for tif_file in glob(str(Path(tif_dir) / Path("*.tif"))):
+        #     with open(tif_file) as src:
+        #         fcntl.flock(src, fcntl.LOCK_EX)
+        #         self.tifs[tif_file] = rio.open(tif_file)
+        # breakpoint()
         self.patch_size = patch_size
 
         # load a valid patch df for each tif
@@ -47,7 +58,7 @@ class TiffDataset(Dataset):
         # loads or generates df indicating which tif patches are VALID
         patch_dfs = []
         for tif_file, tif in self.tifs.items():
-            patch_df_file = f"{str(tif_file).split('.')[0]}_valid_p{self.patch_size}_df.csv"
+            patch_df_file = f"{str(tif_file).split('.')[0]}_valid_p{self.patch_size}_df_debug.csv"
             try:
                 # check if valid patch dataframe already exists
                 log.info(f"Loading dataframe CSV enumerating valid patches (2-3 min)")
@@ -88,9 +99,11 @@ class TiffDataset(Dataset):
     
     def __getitem__(self, idx):
         col, row, label, source_tif = self.patch_df.loc[idx, ["x", "y", "label", "tif_file"]]
+        
         patch = self.tifs[source_tif].read(window=rio.windows.Window(col, row, self.patch_size, self.patch_size))[:-1,:,:]
+        
         # need to add transforms where appropriate
-        return self.tfm(patch), label
+        return self.tfm(patch), label #torch.tensor(label, dtype=torch.half)
 
 
 def validate_patches(chunk, patch_size, tif_file):
