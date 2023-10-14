@@ -30,6 +30,7 @@ model:
 
 data:
   batch_size: 128
+  num_workers: 75
 
 logger:
   wandb:

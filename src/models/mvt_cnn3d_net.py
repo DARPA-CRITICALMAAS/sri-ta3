@@ -29,7 +29,6 @@ class CNN3DNet(nn.Module):
         self.fc2 = nn.Linear(64, num_output_classes)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # breakpoint()
         x = self.pool(self.relu1(self.conv1(x)))
         x = self.pool(self.relu2(self.conv2(x)))
         

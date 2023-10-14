@@ -30,45 +30,38 @@ import pdb
 class TiffDataset(Dataset):
     def __init__(self,
         tif_dir: str = "/workspace/data/",
+        transformation: Union[tv.transforms.Compose, None] = None,
         patch_size: int = 33,
         patch_df: Union[pd.DataFrame, None] = None,
-        transformation: Union[tv.transforms.Compose, None] = None,
     ):
-        # load the raw tif files
         self.tif_dir = tif_dir
-
-        self.tifs = {
-            tif_file: rio.open(tif_file) 
-            for tif_file in glob(str(Path(tif_dir) / Path("*.tif")))
-        }
-        # self.tifs = {}
-        # for tif_file in glob(str(Path(tif_dir) / Path("*.tif"))):
-        #     with open(tif_file) as src:
-        #         fcntl.flock(src, fcntl.LOCK_EX)
-        #         self.tifs[tif_file] = rio.open(tif_file)
-        # breakpoint()
+        self.tfm = transformation
         self.patch_size = patch_size
 
-        # load a valid patch df for each tif
+        # loads VALID patches within all tiffs of dataset
         self.patch_df = self._load_valid_patch_dfs() if patch_df is None else patch_df
 
-        self.tfm = transformation
-
     def _load_valid_patch_dfs(self):
+        # gets tif files for this dataset
+        tif_files = glob(str(Path(self.tif_dir) / Path("*.tif")))
+
         # loads or generates df indicating which tif patches are VALID
         patch_dfs = []
-        for tif_file, tif in self.tifs.items():
+        for tif_file in tif_files:
             patch_df_file = f"{str(tif_file).split('.')[0]}_valid_p{self.patch_size}_df_debug.csv"
             try:
                 # check if valid patch dataframe already exists
-                log.info(f"Loading dataframe CSV enumerating valid patches (2-3 min)")
+                log.info(f"Loading dataframe CSV enumerating valid patches for {tif_file} (~5 min)")
                 patch_df = pd.read_csv(patch_df_file)
             except FileNotFoundError:
                 # if not, generate valid patch dataframe
-                patch_df = self._generate_patch_df(tif_file, tif, self.patch_size)
+                log.warning(f"Dataframe CSV not found. Generating.")
+                with rio.open(tif_file, "r") as tif:
+                    patch_df = self._generate_patch_df(tif_file, tif, self.patch_size)
                 patch_df["tif_file"] = tif_file
                 patch_df.to_csv(patch_df_file, index=False)
             patch_dfs.append(patch_df)
+        # returns valid patches of ALL tiffs in dataset
         return pd.concat(patch_dfs, ignore_index=True)
     
     @staticmethod
@@ -77,7 +70,7 @@ class TiffDataset(Dataset):
         rows, cols = np.mgrid[0:tif.height:1,0:tif.width:1].reshape((-1, (tif.width)*(tif.height)))
 
         # sets up multiprocessing pool
-        log.warning(f"CSV not found. Using {mp.cpu_count()} threads to enumerate and store valid patches to CSV")
+        log.warning(f"Using {mp.cpu_count()} threads to enumerate and store valid patches to CSV")
         pool = mp.Pool(mp.cpu_count())
 
         # splits data into mp.cpu_count() chunks
@@ -98,12 +91,15 @@ class TiffDataset(Dataset):
         return len(self.patch_df)
     
     def __getitem__(self, idx):
+        # loads the patch's location and label
         col, row, label, source_tif = self.patch_df.loc[idx, ["x", "y", "label", "tif_file"]]
         
-        patch = self.tifs[source_tif].read(window=rio.windows.Window(col, row, self.patch_size, self.patch_size))[:-1,:,:]
+        # loads the patch's data
+        with rio.open(source_tif, "r") as tif:
+            pactch_window = rio.windows.Window(col, row, self.patch_size, self.patch_size)
+            patch = tif.read(window=pactch_window)[:-1,:,:]
         
-        # need to add transforms where appropriate
-        return self.tfm(patch), label #torch.tensor(label, dtype=torch.half)
+        return self.tfm(patch), label
 
 
 def validate_patches(chunk, patch_size, tif_file):

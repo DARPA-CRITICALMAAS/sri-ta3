@@ -4,45 +4,12 @@ import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 from torchvision.datasets import MNIST
-from torchvision.transforms import transforms
+import torchvision.transforms as transforms
 
 from src.data.tiff_dataset import TiffDataset, spatial_cross_val_split
 from src import utils
 
-from multiprocessing import Process, Lock
-import multiprocessing as mp
-
 log = utils.get_pylogger(__name__)
-
-
-class TiffDataLoader(DataLoader):
-    def __init__(self, dataset, batch_size, num_workers, pin_memory, shuffle, lock):
-        self.lock = lock
-
-        super(TiffDataLoader, self).__init__(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            shuffle=shuffle,
-            collate_fn=self.collate_fn,
-        )
-
-    def collate_fn(self, batch):
-        self.lock.acquire()  # Acquire the lock
-
-        with mp.Pool(self.num_workers) as pool:
-            results = pool.starmap(DataLoader(
-                                            dataset=self.dataset,
-                                            batch_size=self.batch_size,
-                                            num_workers=1,
-                                            pin_memory=self.pin_memory,
-                                            shuffle=self.shuffle,
-            ), enumerate(batch))
-
-        self.lock.release()  # Release the lock
-
-        return results
 
 
 class TIFFDataModule(LightningDataModule):
@@ -124,9 +91,6 @@ class TIFFDataModule(LightningDataModule):
 
         self.batch_size_per_device = batch_size
 
-        self.train_lock = Lock()
-        self.val_lock = Lock()
-        self.test_lock = Lock()
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
@@ -146,7 +110,7 @@ class TIFFDataModule(LightningDataModule):
             self.data_train = TiffDataset(
                 tif_dir=self.hparams.tif_dir, 
                 patch_size=self.hparams.patch_size,
-                transformation=transforms.Compose([transforms.ToTensor(), transforms.ConvertImageDtype(dtype=torch.half), transforms.Lambda(lambda x: torch.permute(x, (1,2,0)))]) #
+                transformation=transforms.Compose([transforms.ToTensor(), transforms.ConvertImageDtype(dtype=torch.half), transforms.Lambda(lambda x: torch.permute(x, (1,2,0)))])
             )
             self.data_train, self.data_test = spatial_cross_val_split(self.data_train, k=6, nbins=36) # probably want to expose 
             self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually
@@ -157,13 +121,12 @@ class TIFFDataModule(LightningDataModule):
 
         :return: The train dataloader.
         """
-        return DataLoader( #TiffDataLoader(
+        return DataLoader(
             dataset=self.data_train,
             batch_size=self.batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
-            # lock=self.train_lock
         )
 
     def val_dataloader(self) -> DataLoader[Any]:
@@ -171,13 +134,12 @@ class TIFFDataModule(LightningDataModule):
 
         :return: The validation dataloader.
         """
-        return DataLoader( #TiffDataLoader( 
+        return DataLoader(
             dataset=self.data_val,
             batch_size=self.batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
-            # lock=self.val_lock
         )
 
     def test_dataloader(self) -> DataLoader[Any]:
@@ -185,13 +147,12 @@ class TIFFDataModule(LightningDataModule):
 
         :return: The test dataloader.
         """
-        return DataLoader( #TiffDataLoader( #
+        return DataLoader(
             dataset=self.data_test,
             batch_size=self.batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
-            # lock=self.test_lock
         )
 
 
