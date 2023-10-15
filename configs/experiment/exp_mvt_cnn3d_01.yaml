@@ -4,7 +4,7 @@ defaults:
   - override /data: mvt_tiff.yaml
   - override /model: mvt_cnn.yaml
   - override /callbacks: default
-  - override /trainer: default
+  - override /trainer: gpu
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
@@ -29,8 +29,8 @@ model:
   compile: false
 
 data:
-  batch_size: 128
-  num_workers: 75
+  batch_size: 64
+  num_workers: 100
 
 logger:
   wandb:

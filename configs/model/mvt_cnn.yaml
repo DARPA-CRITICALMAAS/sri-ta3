@@ -17,6 +17,7 @@ net:
   _target_: src.models.mvt_cnn3d_net.CNN3DNet
   w: 33
   h: 33
+  d: 12
   num_input_channels: 1
   num_output_classes: 1
 

@@ -48,7 +48,7 @@ class TiffDataset(Dataset):
         # loads or generates df indicating which tif patches are VALID
         patch_dfs = []
         for tif_file in tif_files:
-            patch_df_file = f"{str(tif_file).split('.')[0]}_valid_p{self.patch_size}_df_debug.csv"
+            patch_df_file = f"{str(tif_file).split('.')[0]}_valid_p{self.patch_size}_df.csv"
             try:
                 # check if valid patch dataframe already exists
                 log.info(f"Loading dataframe CSV enumerating valid patches for {tif_file} (~5 min)")

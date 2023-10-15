@@ -1,6 +1,6 @@
 _target_: src.data.tiff_datamodule.TIFFDataModule
-tif_dir: ${paths.data_dir}/LAWLEY22-DATACUBE
+tif_dir: ${paths.data_dir}/SRI-DATACUBE
 batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
-num_workers: 75
-pin_memory: False
+num_workers: 10
+pin_memory: True
 patch_size: 33
