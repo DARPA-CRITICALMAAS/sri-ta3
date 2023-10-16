@@ -3,7 +3,7 @@ from typing import Any, Dict, Tuple
 import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification import BinaryAccuracy
+from torchmetrics.classification import BinaryAUROC #BinaryAccuracy, 
 
 
 class MVTLitModule(LightningModule):
@@ -68,9 +68,9 @@ class MVTLitModule(LightningModule):
         # torch.nn.CrossEntropyLoss()
 
         # metric objects for calculating and averaging accuracy across batches
-        self.train_acc = BinaryAccuracy()
-        self.val_acc = BinaryAccuracy()
-        self.test_acc = BinaryAccuracy()
+        self.train_acc = BinaryAUROC(thresholds=None) #BinaryAccuracy()
+        self.val_acc = BinaryAUROC(thresholds=None) #BinaryAccuracy()
+        self.test_acc = BinaryAUROC(thresholds=None) #BinaryAccuracy()
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
