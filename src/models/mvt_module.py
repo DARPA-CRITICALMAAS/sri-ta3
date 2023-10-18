@@ -68,7 +68,6 @@ class MVTLitModule(LightningModule):
         # torch.nn.CrossEntropyLoss()
 
         # metric objects for calculating and averaging AUC across batches
-        self.train_auc = BinaryAUROC(thresholds=None)
         self.val_auc = BinaryAUROC(thresholds=None)
         self.test_auc = BinaryAUROC(thresholds=None)
 
@@ -111,7 +110,7 @@ class MVTLitModule(LightningModule):
         x, y = batch
         logits = self.forward(x.unsqueeze(1))
         loss = self.criterion(logits, y)
-        preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half)#.bfloat16() #torch.argmax(logits, dim=1)
+        preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
         return loss, preds, y
 
     def training_step(
@@ -124,13 +123,11 @@ class MVTLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, _, _ = self.model_step(batch)
 
         # update and log metrics
-        self.train_loss(loss)
-        self.train_auc(preds, targets)
+        self.train_loss(loss.item())
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", self.train_auc, on_step=False, on_epoch=True, prog_bar=True)
 
         # return loss or backpropagation will fail
         return loss
@@ -149,8 +146,8 @@ class MVTLitModule(LightningModule):
         loss, preds, targets = self.model_step(batch)
 
         # update and log metrics
-        self.val_loss(loss)
-        self.val_auc(preds, targets)
+        self.val_loss(loss.item())
+        self.val_auc(preds.detach(), targets.detach())
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
 
@@ -172,8 +169,8 @@ class MVTLitModule(LightningModule):
         loss, preds, targets = self.model_step(batch)
 
         # update and log metrics
-        self.test_loss(loss)
-        self.test_auc(preds, targets)
+        self.test_loss(loss.item())
+        self.test_auc(preds.detach(), targets.detach())
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
 
