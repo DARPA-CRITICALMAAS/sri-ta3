@@ -93,3 +93,5 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: WANDB_API_KEY
+              value: ${WANDB_API_KEY}

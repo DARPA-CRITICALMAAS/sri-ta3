@@ -8,18 +8,18 @@ class CNN3DNet(nn.Module):
             h: int = 33,
             d: int = 23,
             num_input_channels: int = 1,
-            num_output_classes: int = 2,
+            num_output_classes: int = 1,
     ) -> None:
         super().__init__()
         
         # Convolutional layers
         self.conv1 = nn.Conv3d(num_input_channels, 16, kernel_size=3, padding=1)
         self.relu1 = nn.PReLU()
+        self.pool1 = nn.MaxPool3d(kernel_size=2, stride=2)
         
         self.conv2 = nn.Conv3d(16, 32, kernel_size=3, padding=1)
         self.relu2 = nn.PReLU()
-
-        self.pool = nn.MaxPool3d(kernel_size=2, stride=2) #nn.AvgPool2d
+        self.pool2 = nn.MaxPool3d(kernel_size=2, stride=2) #nn.AvgPool2d
         
         # Fully connected layers
         self.fc1 = nn.Linear(32 * (w//4) * (h//4) * (d//4), 64)
@@ -29,8 +29,9 @@ class CNN3DNet(nn.Module):
         self.fc2 = nn.Linear(64, num_output_classes)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.pool(self.relu1(self.conv1(x)))
-        x = self.pool(self.relu2(self.conv2(x)))
+        # print(torch.cuda.memory_allocated(), torch.cuda.max_memory_allocated())
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
         
         x = x.view(x.size(0), -1)  # Flatten the output
         

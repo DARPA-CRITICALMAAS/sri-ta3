@@ -17,11 +17,12 @@ export VERSION=0.0
 ################################################
 # requested machine configuration
 export NGPU=1
-export GPU_TYPE="2080Ti"
-export TOTAL_CPU=8
+export GPU_TYPE="2080Ti" # "2080Ti" "A5000"
+export TOTAL_CPU=32
 export TOTAL_MEM=32
 export MODE="run"
 export SECRET="docker-io-secret"
+export WANDB_API_KEY="your_base64_api_key"
 ################################################
 # variables used in run docker locally script
 ################################################
