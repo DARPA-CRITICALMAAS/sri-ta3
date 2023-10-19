@@ -11,8 +11,8 @@ devices: 1
 # mixed precision for extra speed-up
 precision: 16
 
-# perform a validation loop every N training epochs
-check_val_every_n_epoch: 1
+# perform a validation loop twice every training epoch
+val_check_interval: 0.5
 
 # set True to to ensure deterministic results
 # makes training slower but gives more reproducibility than just setting seeds
@@ -20,5 +20,3 @@ deterministic: False
 
 # set to True to use cudnn to find the most efficient algorithms for execution
 benchmark: True
-
-val_check_interval: 0.5

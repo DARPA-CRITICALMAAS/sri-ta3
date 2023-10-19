@@ -5,6 +5,7 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC
 
+import pdb
 
 class MVTLitModule(LightningModule):
     """Example of a `LightningModule` for MNIST classification.
@@ -45,6 +46,7 @@ class MVTLitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
+        gain: float,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -61,11 +63,7 @@ class MVTLitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0]))
-        # torch.nn.MSELoss()
-        # torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0])) 
-        # torch.nn.BCELoss() 
-        # torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(gain))
 
         # metric objects for calculating and averaging AUC across batches
         self.val_auc = BinaryAUROC(thresholds=None)
@@ -109,7 +107,7 @@ class MVTLitModule(LightningModule):
         """
         x, y = batch
         logits = self.forward(x.unsqueeze(1))
-        loss = self.criterion(logits, y)
+        loss = self.criterion(logits, y.unsqueeze(1))
         preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
         return loss, preds, y
 
