@@ -28,6 +28,7 @@ model:
     num_input_channels: 1
     num_output_classes : 1
   compile: false
+  gain: 400.0
 
 data:
   batch_size: 1024

@@ -24,4 +24,4 @@ net:
 # compile model for faster training with pytorch 2.0
 compile: false
 
-gain: 500.0
+gain: 400.0
