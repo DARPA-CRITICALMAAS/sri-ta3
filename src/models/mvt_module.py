@@ -5,7 +5,6 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC
 
-import pdb
 
 class MVTLitModule(LightningModule):
     """Example of a `LightningModule` for MNIST classification.
