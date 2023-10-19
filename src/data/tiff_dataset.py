@@ -152,7 +152,7 @@ def spatial_cross_val_split(
     log.info(f"Splitting patches with spatial cross-val (2-3 min)")
     ds_df = pd.DataFrame(
         data=ds.valid_patches, 
-        index=np.arange(ds.validate_patches.shape[0]), 
+        index=np.arange(ds.valid_patches.shape[0]), 
         columns=["x","y","label","lon", "lat","source"]
     )
     # select only the deposit/occurence/neighbor present samples
