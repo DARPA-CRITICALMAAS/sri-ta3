@@ -37,7 +37,7 @@ class CNN3DNet(nn.Module):
         x = self.dropout(self.relu3(self.fc1(x)))
         x = self.fc2(x)
         
-        return x.squeeze()
+        return x
 
 if __name__ == "__main__":
     _ = CNN3DNet()

@@ -45,6 +45,7 @@ class MVTLitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
+        gain: float,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -56,19 +57,14 @@ class MVTLitModule(LightningModule):
         # self.example_input_array = torch.Tensor(16, 23, 33, 33)
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
-        self.save_hyperparameters(logger=False)
+        self.save_hyperparameters(logger=False, ignore=['net'])
 
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0]))
-        # torch.nn.MSELoss()
-        # torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([1.0])) 
-        # torch.nn.BCELoss() 
-        # torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(gain))
 
         # metric objects for calculating and averaging AUC across batches
-        self.train_auc = BinaryAUROC(thresholds=None)
         self.val_auc = BinaryAUROC(thresholds=None)
         self.test_auc = BinaryAUROC(thresholds=None)
 
@@ -110,8 +106,8 @@ class MVTLitModule(LightningModule):
         """
         x, y = batch
         logits = self.forward(x.unsqueeze(1))
-        loss = self.criterion(logits, y)
-        preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half)#.bfloat16() #torch.argmax(logits, dim=1)
+        loss = self.criterion(logits, y.unsqueeze(1))
+        preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
         return loss, preds, y
 
     def training_step(
@@ -124,13 +120,11 @@ class MVTLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, _, _ = self.model_step(batch)
 
         # update and log metrics
-        self.train_loss(loss)
-        self.train_auc(preds, targets)
+        self.train_loss(loss.item())
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", self.train_auc, on_step=False, on_epoch=True, prog_bar=True)
 
         # return loss or backpropagation will fail
         return loss
@@ -149,8 +143,8 @@ class MVTLitModule(LightningModule):
         loss, preds, targets = self.model_step(batch)
 
         # update and log metrics
-        self.val_loss(loss)
-        self.val_auc(preds, targets)
+        self.val_loss(loss.item())
+        self.val_auc(preds.detach(), targets.detach())
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
 
@@ -172,8 +166,8 @@ class MVTLitModule(LightningModule):
         loss, preds, targets = self.model_step(batch)
 
         # update and log metrics
-        self.test_loss(loss)
-        self.test_auc(preds, targets)
+        self.test_loss(loss.item())
+        self.test_auc(preds.detach(), targets.detach())
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
 
