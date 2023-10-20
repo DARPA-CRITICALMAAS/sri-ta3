@@ -1,0 +1,54 @@
+# @package _global_
+
+defaults:
+  - override /data: mvt_tiff.yaml
+  - override /model: mvt_cnn.yaml
+  - override /callbacks: default
+  - override /trainer: gpu
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["mvt", "cnn_net"]
+task_name: "cmaasta3-train"
+
+seed: 1234
+
+data:
+  batch_size: 1024
+  num_workers: 12
+
+# gain for the class inbalance:
+# below are the ratios of number of negative samples over positive ones
+#   for US: 375.51267789212045 
+#   for Aus: 1146.0821247597414 
+#   for both: 437.01508981367846 
+model:
+  optimizer:
+    lr: 0.001
+  net:
+    _target_: src.models.mvt_cnn3d_net.CNN3DNet
+    w: 33
+    h: 33
+    d: 12
+    hiddim1: 16
+    hiddim2: 32
+    hiddim3: 64
+    num_input_channels: 1
+    num_output_classes: 1
+    dropout_rate: 0.6
+  compile: false
+  gain: 400.0
+
+
+trainer:
+  min_epochs: 10
+  max_epochs: 10
+  limit_train_batches: 0.1
+  limit_val_batches: 0.1 
+  limit_test_batches: 1.0
+
+
+logger:
+  wandb:
+    name: "cnn3d_best_oct20"

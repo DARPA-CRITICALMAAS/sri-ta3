@@ -105,7 +105,7 @@ class MVTLitModule(LightningModule):
             - A tensor of target labels.
         """
         x, y = batch
-        logits = self.forward(x.unsqueeze(1))
+        logits = self.forward(x)
         loss = self.criterion(logits, y.unsqueeze(1))
         preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
         return loss, preds, y

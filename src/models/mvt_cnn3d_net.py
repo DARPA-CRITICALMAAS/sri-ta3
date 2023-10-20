@@ -7,29 +7,34 @@ class CNN3DNet(nn.Module):
             w: int = 33,
             h: int = 33,
             d: int = 23,
+            hiddim1: int = 16,
+            hiddim2: int = 32,
+            hiddim3: int = 64,
             num_input_channels: int = 1,
             num_output_classes: int = 1,
+            dropout_rate: float = 0.5,
     ) -> None:
         super().__init__()
         
         # Convolutional layers
-        self.conv1 = nn.Conv3d(num_input_channels, 16, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv3d(num_input_channels, hiddim1, kernel_size=3, padding=1)
         self.relu1 = nn.PReLU()
         self.pool1 = nn.MaxPool3d(kernel_size=2, stride=2)
         
-        self.conv2 = nn.Conv3d(16, 32, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv3d(hiddim1, hiddim2, kernel_size=3, padding=1)
         self.relu2 = nn.PReLU()
         self.pool2 = nn.MaxPool3d(kernel_size=2, stride=2) #nn.AvgPool2d
         
         # Fully connected layers
-        self.fc1 = nn.Linear(32 * (w//4) * (h//4) * (d//4), 64)
+        self.fc1 = nn.Linear(hiddim2 * (w//4) * (h//4) * (d//4), hiddim3)
         self.relu3 = nn.PReLU()
-        self.dropout = nn.Dropout(0.5)  # Dropout for regularization
+        self.dropout = nn.Dropout(dropout_rate)  # Dropout for regularization
         
-        self.fc2 = nn.Linear(64, num_output_classes)
+        self.fc2 = nn.Linear(hiddim3, num_output_classes)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # print(torch.cuda.memory_allocated(), torch.cuda.max_memory_allocated())
+        x = x.unsqueeze(1)
+        
         x = self.pool1(self.relu1(self.conv1(x)))
         x = self.pool2(self.relu2(self.conv2(x)))
         
