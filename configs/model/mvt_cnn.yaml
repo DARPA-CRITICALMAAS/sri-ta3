@@ -1,7 +1,7 @@
 _target_: src.models.mvt_module.MVTLitModule
 
 optimizer:
-  _target_: torch.optim.AdamW
+  _target_: torch.optim.Adam
   _partial_: true
   lr: 0.001
   weight_decay: 0.0
