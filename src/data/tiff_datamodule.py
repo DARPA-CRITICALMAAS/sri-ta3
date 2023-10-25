@@ -1,12 +1,9 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional, List
 
-import torch
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
-from torchvision.datasets import MNIST
-import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, Dataset
 
-from src.data.tiff_dataset import TiffDataset, spatial_cross_val_split
+from src.data.tiff_dataset import TiffDataset, spatial_cross_val_split, filter_by_bounds
 from src import utils
 
 log = utils.get_pylogger(__name__)
@@ -64,6 +61,7 @@ class TIFFDataModule(LightningDataModule):
         num_workers: int = 0,
         pin_memory: bool = False,
         patch_size: int = 33,
+        predict_bounds: Optional[List[str]] = None,
     ) -> None:
         """Initialize a `MNISTDataModule`.
 
@@ -88,6 +86,7 @@ class TIFFDataModule(LightningDataModule):
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
+        self.data_predict: Optional[Dataset] = None
 
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -95,15 +94,29 @@ class TIFFDataModule(LightningDataModule):
 
         :param stage: The stage to setup. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`. Defaults to ``None``.
         """
-        # load and split datasets only if not loaded already
-        if not self.data_train or not self.data_val or not self.data_test:
-            self.data_train = TiffDataset(
-                tif_dir=self.hparams.tif_dir, 
-                patch_size=self.hparams.patch_size,
-            )
-            self.data_train, self.data_test = spatial_cross_val_split(self.data_train, k=6, nbins=36) # probably want to expose 
-            self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually
-            log.info(f"Used spatial cross val to split patches - train size {len(self.data_train)}, val size {len(self.data_val)}, test size {len(self.data_test)}.")
+        if stage in ["fit","validate","test"]:
+            # loads and splits datasets for train / val / test
+            if not self.data_train or not self.data_val or not self.data_test:
+                self.data_train = TiffDataset(
+                    tif_dir=self.hparams.tif_dir, 
+                    patch_size=self.hparams.patch_size,
+                    stage=stage
+                )
+                self.data_train, self.data_test = spatial_cross_val_split(self.data_train, k=6, nbins=36) # probably want to expose 
+                self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually
+                log.info(f"Used spatial cross val to split patches - train size {len(self.data_train)}, val size {len(self.data_val)}, test size {len(self.data_test)}.")
+        elif stage == "predict":
+            # loads datasets to produce a prediction map
+            if not self.data_predict:
+                self.data_predict = TiffDataset(
+                    tif_dir=self.hparams.tif_dir, 
+                    patch_size=self.hparams.patch_size,
+                    stage=stage
+                )
+                self.data_predict = filter_by_bounds(self.data_predict, self.hparams.predict_bounds)
+                log.info(f"Used bounds to filter patches - number of patches {len(self.data_predict)}.")
+        else:
+            raise NotImplementedError
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.
@@ -138,6 +151,19 @@ class TIFFDataModule(LightningDataModule):
         """
         return DataLoader(
             dataset=self.data_test,
+            batch_size=self.hparams.batch_size,
+            num_workers=self.hparams.num_workers,
+            pin_memory=self.hparams.pin_memory,
+            shuffle=False,
+        )
+
+    def predict_dataloader(self) -> DataLoader[Any]:
+        """Create and return the predict dataloader.
+
+        :return: The predict dataloader.
+        """
+        return DataLoader(
+            dataset=self.data_predict,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,

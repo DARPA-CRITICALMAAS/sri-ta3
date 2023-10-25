@@ -4,6 +4,7 @@ import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC
+import rasterio as rio
 
 
 class MVTLitModule(LightningModule):
@@ -46,6 +47,7 @@ class MVTLitModule(LightningModule):
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
         gain: float,
+        mc_samples: int,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -174,6 +176,33 @@ class MVTLitModule(LightningModule):
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
         pass
+
+    def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
+        """Perform a single predict step on a batch of data from the predict set.
+
+        :param batch: A batch of data (a tuple) containing the input tensor of images and target
+            labels.
+        :param batch_idx: The index of the current batch.
+        """
+
+        # enables Monte Carlo Dropout
+        self.net.train()
+
+        # generates MC samples
+        preds = torch.sigmoid(
+            self.forward(
+                batch[0].tile((self.hparams.mc_samples,1,1,1))
+            ).reshape(-1,batch[0].shape[0])
+        ).detach()
+
+        # computes mean and std of MC samples
+        means = preds.mean(dim=0).squeeze()
+        stds = preds.std(dim=0).squeeze()
+    
+        return torch.stack((batch[2], batch[3], means, stds), dim=1)
+        
+    def on_predict_epoch_end(self, results):
+        self.trainer.results = torch.vstack(results[0]).cpu().numpy()
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

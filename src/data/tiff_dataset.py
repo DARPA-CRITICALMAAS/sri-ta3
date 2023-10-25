@@ -27,6 +27,7 @@ class TiffDataset(Dataset):
         tif_files: Union[List[str], None] = None,
         valid_patches: Union[np.ndarray, None] = None,
         patch_size: int = 33,
+        stage: Union[np.ndarray, None] = None,
     ):
         # loads tif files in MP compatible format
         self.tif_files, self.tif_data = self._load_tif_files(tif_dir, tif_files)
@@ -36,6 +37,7 @@ class TiffDataset(Dataset):
 
         # sets remaining object variables
         self.patch_size = patch_size
+        self.stage = stage
 
     def _load_tif_files(self, tif_dir, tif_files):
         # sets List[str] of tif files
@@ -107,7 +109,10 @@ class TiffDataset(Dataset):
         # loads the patch's data
         patch = self.tif_data[source_tif][:-1,row:row+self.patch_size,col:col+self.patch_size]
         
-        return patch, label
+        if self.stage == "predict":
+            return patch, label, col, row # produce map
+        else:
+            return patch, label # train/val/test
 
 
 def validate_patches(chunk, patch_size, tif_file):
@@ -175,15 +180,25 @@ def spatial_cross_val_split(
     test_ds = TiffDataset(
         tif_files=ds.tif_files, 
         patch_size=ds.patch_size, 
+        stage=ds.stage,
         valid_patches=test_valid_patches
     )
     ds_valid_patches = ds_df[ds_df["group"] != eval_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     ds = TiffDataset(
         tif_files=ds.tif_files, 
         patch_size=ds.patch_size, 
+        stage=ds.stage,
         valid_patches=ds_valid_patches
     )
     return ds, test_ds
+
+
+def filter_by_bounds(ds, bounds):
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] > bounds[0]] # left
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] > bounds[1]] # bottom
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] < bounds[2]] # right
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] < bounds[3]] # top
+    return ds
 
 
 if __name__ == "__main__":
