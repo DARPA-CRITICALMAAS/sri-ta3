@@ -81,5 +81,11 @@ python src/train.py trainer.max_epochs=20 data.batch_size=64
 You can test an existing checkpoint like this
 
 ```bash
-python src/test.py ckpt_path=[PATH_TO_CHECKPOINT/*.ckpt]
+python src/test.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
+```
+
+You can output a map with prospectivity likelihood and uncertainty using an existing checkpoint like this (example in `exp_mvt_map_eus.yaml` experiment)
+
+```bash
+python src/map.py predict_bounds=[<left long. bound>, <bottom lat. bound>, <right long. bound>, <top lat. bound>] ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
 ```
