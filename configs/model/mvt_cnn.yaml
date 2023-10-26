@@ -25,3 +25,5 @@ net:
 compile: false
 
 gain: 400.0
+
+mc_samples: 100
