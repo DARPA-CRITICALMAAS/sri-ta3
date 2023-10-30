@@ -3,7 +3,6 @@
 defaults:
   - override /data: sri_mvt_tiff.yaml
   - override /model: resnet.yaml
-  - override /callbacks: default
   - override /trainer: gpu
 
 # all parameters below will be merged with parameters from default configurations set above

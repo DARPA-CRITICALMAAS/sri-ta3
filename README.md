@@ -84,8 +84,8 @@ You can test an existing checkpoint like this
 python src/test.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
 ```
 
-You can output a map with prospectivity likelihood and uncertainty using an existing checkpoint like this (example in `exp_mvt_map_eus.yaml` experiment)
+You can output a map with prospectivity likelihood and uncertainty using an existing checkpoint like this (example in `exp_mvt_resnet_sri.yaml` experiment)
 
 ```bash
-python src/map.py predict_bounds=[<left long. bound>, <bottom lat. bound>, <right long. bound>, <top lat. bound>] ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
+python src/map.py +experiment=exp_mvt_resnet_sri data.batch_size=128 ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
 ```
