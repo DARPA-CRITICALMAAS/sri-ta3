@@ -102,7 +102,7 @@ class TIFFDataModule(LightningDataModule):
                     patch_size=self.hparams.patch_size,
                     stage=stage
                 )
-                self.data_train, self.data_test = spatial_cross_val_split(self.data_train, k=6, nbins=36) # probably want to expose 
+                self.data_train, self.data_test = spatial_cross_val_split(self.data_train, eval_set=1, k=6, nbins=36) # probably want to expose 
                 self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually
                 log.info(f"Used spatial cross val to split patches - train size {len(self.data_train)}, val size {len(self.data_val)}, test size {len(self.data_test)}.")
         elif stage == "predict":

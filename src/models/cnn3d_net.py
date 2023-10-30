@@ -46,4 +46,5 @@ class CNN3DNet(nn.Module):
         return x
 
 if __name__ == "__main__":
-    _ = CNN3DNet()
+    from torchinfo import summary
+    _ = summary(CNN3DNet(d=12), (1,12,33,33))
