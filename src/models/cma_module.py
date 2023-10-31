@@ -241,4 +241,4 @@ class CMALitModule(LightningModule):
 
 
 if __name__ == "__main__":
-    _ = MVTLitModule(None, None, None, None)
+    _ = CMALitModule(None, None, None, None)

@@ -33,4 +33,4 @@ class ResNet(nn.Module):
 if __name__ == "__main__":
     from torchinfo import summary
     bs = 4
-    _ = summary(MVTResNet(), (bs,12,33,33))
+    _ = summary(ResNet(), (bs,12,33,33))
