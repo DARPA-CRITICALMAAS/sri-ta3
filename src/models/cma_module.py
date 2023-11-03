@@ -6,6 +6,8 @@ from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC
 import rasterio as rio
 
+from src import utils
+log = utils.get_pylogger(__name__)
 
 class CMALitModule(LightningModule):
     """Example of a `LightningModule` for MNIST classification.
@@ -177,6 +179,33 @@ class CMALitModule(LightningModule):
         """Lightning hook that is called when a test epoch ends."""
         pass
 
+    # def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
+    #     """Perform a single predict step on a batch of data from the predict set.
+
+    #     :param batch: A batch of data (a tuple) containing the input tensor of images and target
+    #         labels.
+    #     :param batch_idx: The index of the current batch.
+    #     """
+
+    #     # enables Monte Carlo Dropout
+    #     self.net.train()
+
+    #     # generates MC samples
+    #     preds = torch.sigmoid(
+    #         self.forward(
+    #             batch[0].tile((self.hparams.mc_samples,1,1,1))
+    #         ).reshape(-1,batch[0].shape[0])
+    #     ).detach()
+
+    #     # computes mean and std of MC samples
+    #     means = preds.mean(dim=0).squeeze()
+    #     stds = preds.std(dim=0).squeeze()
+    
+    #     return torch.stack((batch[2], batch[3], means, stds), dim=1)
+        
+    # def on_predict_epoch_end(self, results):
+    #     self.trainer.results = torch.vstack(results[0]).cpu().numpy()
+
     def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single predict step on a batch of data from the predict set.
 
@@ -185,9 +214,17 @@ class CMALitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
 
-        # enables Monte Carlo Dropout
-        self.net.train()
+        from captum.attr import IntegratedGradients
 
+        ig = IntegratedGradients(self.net)
+        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2))
+
+        # from captum.attr import Occlusion
+        # occlusion = Occlusion(self.net)
+        # attribution = occlusion.attribute(batch[0],sliding_window_shapes=(1, 16, 16)).mean(dim=(-1,-2))
+
+        # enables Monte Carlo Dropout
+        self.net.activate_dropout()
         # generates MC samples
         preds = torch.sigmoid(
             self.forward(
@@ -198,8 +235,8 @@ class CMALitModule(LightningModule):
         # computes mean and std of MC samples
         means = preds.mean(dim=0).squeeze()
         stds = preds.std(dim=0).squeeze()
-    
-        return torch.stack((batch[2], batch[3], means, stds), dim=1)
+        # breakpoint()
+        return torch.concat((torch.stack((batch[2], batch[3], means, stds), dim=1), attribution), dim=1)
         
     def on_predict_epoch_end(self, results):
         self.trainer.results = torch.vstack(results[0]).cpu().numpy()
@@ -241,4 +278,4 @@ class CMALitModule(LightningModule):
 
 
 if __name__ == "__main__":
-    _ = MVTLitModule(None, None, None, None)
+    _ = CMALitModule(None, None, None, None)

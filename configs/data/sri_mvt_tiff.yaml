@@ -4,3 +4,4 @@ batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a 
 num_workers: 10
 pin_memory: False
 patch_size: 33
+uscan_only: False

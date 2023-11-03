@@ -19,6 +19,7 @@ data:
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
   predict_bounds: [-106.61, 24.28, -59.36, 49.86]
+  uscan_only: False
 
 # gain for the class inbalance:
 # below are the ratios of number of negative samples over positive ones
@@ -29,7 +30,7 @@ model:
   optimizer:
     lr: 0.001
   net:
-    _target_: src.models.mvt_cnn3d_net.CNN3DNet
+    _target_: src.models.cnn3d_net.CNN3DNet
     w: 33
     h: 33
     d: 12

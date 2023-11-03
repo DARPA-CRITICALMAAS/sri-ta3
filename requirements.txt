@@ -28,3 +28,4 @@ jupyterlab
 matplotlib
 glob2
 numpy
+captum          # for Integrated Gradients

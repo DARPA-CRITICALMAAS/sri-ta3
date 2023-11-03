@@ -62,14 +62,16 @@ class TIFFDataModule(LightningDataModule):
         pin_memory: bool = False,
         patch_size: int = 33,
         predict_bounds: Optional[List[str]] = None,
+        uscan_only: bool = False,
     ) -> None:
-        """Initialize a `MNISTDataModule`.
+        """Initialize a `TIFFDataModule`.
 
         :param tif_dir: The data directory. Defaults to `"data/"`.
         :param train_val_test_split: The train, validation and test split. Defaults to `(55_000, 5_000, 10_000)`.
         :param batch_size: The batch size. Defaults to `64`.
         :param num_workers: The number of workers. Defaults to `0`.
         :param pin_memory: Whether to pin memory. Defaults to `False`.
+        :param uscan_only: Whether to use US/Canada or US/Canada/Australia data. Defaults to `False`.
         """
         super().__init__()
 
@@ -100,7 +102,8 @@ class TIFFDataModule(LightningDataModule):
                 self.data_train = TiffDataset(
                     tif_dir=self.hparams.tif_dir, 
                     patch_size=self.hparams.patch_size,
-                    stage=stage
+                    stage=stage,
+                    uscan_only=self.hparams.uscan_only,
                 )
                 self.data_train, self.data_test = spatial_cross_val_split(self.data_train, eval_set=1, k=6, nbins=36) # probably want to expose 
                 self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually
@@ -111,7 +114,8 @@ class TIFFDataModule(LightningDataModule):
                 self.data_predict = TiffDataset(
                     tif_dir=self.hparams.tif_dir, 
                     patch_size=self.hparams.patch_size,
-                    stage=stage
+                    stage=stage,
+                    uscan_only=self.hparams.uscan_only,
                 )
                 self.data_predict = filter_by_bounds(self.data_predict, self.hparams.predict_bounds)
                 log.info(f"Used bounds to filter patches - number of patches {len(self.data_predict)}.")

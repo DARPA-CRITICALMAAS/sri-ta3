@@ -8,8 +8,8 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mvt", "resnet"]
-task_name: "cmaasta3-train"
+tags: ["mvt", "resnet", 'uscan']
+task_name: "cmta3-tunning-resnet-sri-uscan"
 
 seed: 1234
 

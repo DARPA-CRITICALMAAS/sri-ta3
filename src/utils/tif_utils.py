@@ -15,7 +15,10 @@ def write_tif(results, bounds, patch_size, path):
     resolution = (0.01,0.01)
     height = int((bounds[3]-bounds[1]) / resolution[0])+2
     width = int((bounds[2]-bounds[0]) / resolution[1])+2
-    for idx, tif_layer in enumerate(["means","stds"]):
+    for idx, tif_layer in enumerate(["means", "stds", 
+                                     "depth_to_lab", "depth_to_moho", "satellite_gravity", "gravity_bouguer",
+                                     "gravity_HGM", "gravity_upward_continued_HGM", "gravity_worms", "gravity_upward_continued_worms",
+                                     "magnetic_HGM", "magnetic_long_wavelength_HGM", "magnetic_worms", "magnetic_long_wavelength_worms"]):
         tif_data = -1*np.ones(shape=(height, width))
         tif_data[results[:,1].astype(int), results[:,0].astype(int)] = data[:,idx].astype(float)
         # defines the tif transform

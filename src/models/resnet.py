@@ -29,8 +29,11 @@ class ResNet(nn.Module):
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.backbone(x)[0])
+    
+    def activate_dropout(self):
+        self.classifier[2].train()
 
 if __name__ == "__main__":
     from torchinfo import summary
     bs = 4
-    _ = summary(MVTResNet(), (bs,12,33,33))
+    _ = summary(ResNet(), (bs,12,33,33))

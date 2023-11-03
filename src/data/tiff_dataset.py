@@ -28,7 +28,9 @@ class TiffDataset(Dataset):
         valid_patches: Union[np.ndarray, None] = None,
         patch_size: int = 33,
         stage: Union[np.ndarray, None] = None,
+        uscan_only: bool = False,
     ):
+        self.uscan_only = uscan_only
         # loads tif files in MP compatible format
         self.tif_files, self.tif_data = self._load_tif_files(tif_dir, tif_files)
 
@@ -43,6 +45,11 @@ class TiffDataset(Dataset):
         # sets List[str] of tif files
         assert (tif_files is None and tif_dir is not None) or (tif_files is not None and tif_dir is None), "tif_dir and tif_files BOTH set."
         tif_files = glob(str(Path(tif_dir) / Path("*.tif"))) if tif_files is None else tif_files
+        if self.uscan_only:
+            log.info("Only using US and Canada datapoints.")
+            tif_files = [item for item in tif_files if 'north-america' in item]
+        else:
+            log.info("Using all available datapoints: US, Canada, and Australia.")
         tif_data = []
         for tif_file in tif_files:
             with rio_open(tif_file, "r") as tif:
@@ -181,14 +188,16 @@ def spatial_cross_val_split(
         tif_files=ds.tif_files, 
         patch_size=ds.patch_size, 
         stage=ds.stage,
-        valid_patches=test_valid_patches
+        valid_patches=test_valid_patches,
+        uscan_only=ds.uscan_only,
     )
     ds_valid_patches = ds_df[ds_df["group"] != eval_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     ds = TiffDataset(
         tif_files=ds.tif_files, 
         patch_size=ds.patch_size, 
         stage=ds.stage,
-        valid_patches=ds_valid_patches
+        valid_patches=ds_valid_patches,
+        uscan_only=ds.uscan_only,
     )
     return ds, test_ds
 

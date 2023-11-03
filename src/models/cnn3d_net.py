@@ -44,6 +44,9 @@ class CNN3DNet(nn.Module):
         x = self.fc2(x)
         
         return x
+    
+    def activate_dropout(self):
+        self.dropout.train()
 
 if __name__ == "__main__":
     from torchinfo import summary
