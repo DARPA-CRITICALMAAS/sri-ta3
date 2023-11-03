@@ -56,6 +56,7 @@ class CMALitModule(LightningModule):
         :param net: The model to train.
         :param optimizer: The optimizer to use for training.
         :param scheduler: The learning rate scheduler to use for training.
+        :param gain: The weight on the positive class, helps with data inbalance.
         """
         super().__init__()
         # self.example_input_array = torch.Tensor(16, 23, 33, 33)
