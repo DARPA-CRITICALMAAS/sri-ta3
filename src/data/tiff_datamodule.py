@@ -99,15 +99,18 @@ class TIFFDataModule(LightningDataModule):
         if stage in ["fit","validate","test"]:
             # loads and splits datasets for train / val / test
             if not self.data_train or not self.data_val or not self.data_test:
+                log.debug(f"Instantiating base dataset.")
                 self.data_train = TiffDataset(
                     tif_dir=self.hparams.tif_dir, 
                     patch_size=self.hparams.patch_size,
                     stage=stage,
                     uscan_only=self.hparams.uscan_only,
                 )
-                self.data_train, self.data_test = spatial_cross_val_split(self.data_train, eval_set=1, k=6, nbins=36) # probably want to expose 
-                self.data_train, self.data_val = spatial_cross_val_split(self.data_train,  k=6, nbins=36) # params in config eventually
-                log.info(f"Used spatial cross val to split patches - train size {len(self.data_train)}, val size {len(self.data_val)}, test size {len(self.data_test)}.")
+                log.debug(f"Splitting base dataset into train / val / test.")
+                self.data_train, self.data_val, self.data_test = spatial_cross_val_split(self.data_train, k=6, test_set=2, val_set=4) # probably want to expose
+                log.info(f"Spatial cross val ouput: train pos - {self.data_train.valid_patches[:,2].sum()}, train neg - {len(self.data_train)-self.data_train.valid_patches[:,2].sum()}.")
+                log.info(f"Spatial cross val ouput: val pos - {self.data_val.valid_patches[:,2].sum()}, val neg - {len(self.data_val)-self.data_val.valid_patches[:,2].sum()}.")
+                log.info(f"Spatial cross val ouput: test pos - {self.data_test.valid_patches[:,2].sum()}, test neg - {len(self.data_test)-self.data_test.valid_patches[:,2].sum()}.")
         elif stage == "predict":
             # loads datasets to produce a prediction map
             if not self.data_predict:

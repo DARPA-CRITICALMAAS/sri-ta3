@@ -45,7 +45,6 @@ hydra:
 
     # define hyperparameter search space
     params:
-      model.optimizer.lr: choice(1e-4, 1e-3)
+      model.optimizer.lr: interval(1e-4, 1e-3)
       model.optimizer.weight_decay: choice(0.0, 1e-4, 1e-3, 1e-2)
       model.net.dropout_rate: choice(0.2, 0.4, 0.6, 0.8)
-      model.gain: choice(250.0, 500.0, 750.0, 1000.0)

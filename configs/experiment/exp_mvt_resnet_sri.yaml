@@ -30,7 +30,7 @@ model:
     num_output_classes: 1
     dropout_rate: 0.4
   compile: false
-  gain: 250.0
+  gain: 437.0
   mc_samples: 100
 
 trainer:
@@ -42,4 +42,4 @@ trainer:
 
 logger:
   wandb:
-    name: "sri_resnet_best_oct30"
+    name: "sri_resnet_nov5"

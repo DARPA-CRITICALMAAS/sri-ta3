@@ -48,6 +48,9 @@ class CNN3DNet(nn.Module):
     def activate_dropout(self):
         self.dropout.train()
 
+    def activate_dropout(self):
+        self.train()
+
 if __name__ == "__main__":
     from torchinfo import summary
     _ = summary(CNN3DNet(d=12), (1,12,33,33))

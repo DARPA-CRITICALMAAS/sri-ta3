@@ -13,7 +13,7 @@ class ResNet(nn.Module):
         super().__init__()
         
         self.backbone = timm.create_model(
-            model_name="resnet18", 
+            model_name="resnet18", # oother option - "resnet10t"
             pretrained=False, 
             in_chans=num_input_channels, 
             features_only=True,
@@ -24,7 +24,8 @@ class ResNet(nn.Module):
             torch.nn.AdaptiveAvgPool2d(1),
             torch.nn.Flatten(start_dim=1),
             torch.nn.Dropout(p=dropout_rate),
-            torch.nn.Linear(self.backbone.layer4[1].bn2.num_features, num_output_classes)
+            torch.nn.Linear(self.backbone.layer4[1].bn2.num_features, num_output_classes) # resnet18
+            # torch.nn.Linear(self.backbone.layer4[0].downsample[2].num_features, num_output_classes) # resnet10t
         )
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
