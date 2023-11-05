@@ -13,8 +13,8 @@ def write_tif(results, bounds, patch_size, path):
     # generates numpy data tifs
     data = results[:,2:]
     resolution = (0.01,0.01)
-    height = int((bounds[3]-bounds[1]) / resolution[0])+2
-    width = int((bounds[2]-bounds[0]) / resolution[1])+2
+    height = int((bounds[3]-bounds[1]) / resolution[0])
+    width = int((bounds[2]-bounds[0]) / resolution[1])
     for idx, tif_layer in enumerate(["means","stds"]):
         tif_data = -1*np.ones(shape=(height, width))
         tif_data[results[:,1].astype(int), results[:,0].astype(int)] = data[:,idx].astype(float)

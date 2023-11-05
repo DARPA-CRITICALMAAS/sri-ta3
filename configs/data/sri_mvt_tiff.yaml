@@ -1,6 +1,6 @@
 _target_: src.data.tiff_datamodule.TIFFDataModule
 tif_dir: ${paths.data_dir}/SRI-DATACUBE
-batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
-num_workers: 10
+batch_size: 128
+num_workers: 12
 pin_memory: False
 patch_size: 33

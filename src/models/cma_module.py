@@ -186,13 +186,13 @@ class CMALitModule(LightningModule):
         """
 
         # enables Monte Carlo Dropout
-        self.net.train()
+        self.net.activate_dropout()
 
         # generates MC samples
         preds = torch.sigmoid(
             self.forward(
                 batch[0].tile((self.hparams.mc_samples,1,1,1))
-            ).reshape(-1,batch[0].shape[0])
+            ).reshape(self.hparams.mc_samples,-1)
         ).detach()
 
         # computes mean and std of MC samples

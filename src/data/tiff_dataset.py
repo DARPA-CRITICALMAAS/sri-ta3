@@ -7,10 +7,11 @@ from multiprocessing import Process, Pool, cpu_count
 from tqdm import tqdm
 from rasterio.windows import Window
 from rasterio import open as rio_open
+from rasterio import Env as rio_env
 from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
-from torch import tensor
+from torch import tensor, half
 
 from src import utils
 
@@ -25,12 +26,13 @@ class TiffDataset(Dataset):
     def __init__(self,
         tif_dir: Union[str, None] = None,
         tif_files: Union[List[str], None] = None,
+        tif_data: Union[np.ndarray, None] = None,
         valid_patches: Union[np.ndarray, None] = None,
         patch_size: int = 33,
         stage: Union[np.ndarray, None] = None,
     ):
         # loads tif files in MP compatible format
-        self.tif_files, self.tif_data = self._load_tif_files(tif_dir, tif_files)
+        self.tif_files, self.tif_data = self._load_tif_files(tif_dir, tif_files, tif_data)
 
         # loads VALID patches within all tiffs of dataset
         self.valid_patches = self._load_valid_patches(self.tif_files, patch_size) if valid_patches is None else valid_patches
@@ -39,14 +41,17 @@ class TiffDataset(Dataset):
         self.patch_size = patch_size
         self.stage = stage
 
-    def _load_tif_files(self, tif_dir, tif_files):
+    def _load_tif_files(self, tif_dir, tif_files, tif_data):
         # sets List[str] of tif files
         assert (tif_files is None and tif_dir is not None) or (tif_files is not None and tif_dir is None), "tif_dir and tif_files BOTH set."
-        tif_files = glob(str(Path(tif_dir) / Path("*.tif"))) if tif_files is None else tif_files
-        tif_data = []
-        for tif_file in tif_files:
-            with rio_open(tif_file, "r") as tif:
-                tif_data.append(tensor(tif.read()).half())
+        if tif_files is None:
+            tif_files = glob(str(Path(tif_dir) / Path("*.tif")))
+            tif_data = []
+            for tif_file in tif_files:
+                log.info(f"Loading tif data for for {tif_file}")
+                with rio_env(GDAL_CACHEMAX=0):
+                    with rio_open(tif_file, driver='GTiff') as tif:
+                        tif_data.append(tensor(tif.read().astype("half"), dtype=half))
         return tif_files, tif_data
 
     def _load_valid_patches(self, tif_files, patch_size):
@@ -149,7 +154,8 @@ def validate_patches(chunk, patch_size, tif_file):
 def spatial_cross_val_split(
     ds: Dataset, 
     k: int = 5, 
-    eval_set: int = 0, 
+    test_set: int = 0,
+    val_set: int = 1,
     split_col: str = "lat", 
     nbins: Union[int, None] = None,
     samples_per_bin: int = 3.0
@@ -176,21 +182,31 @@ def spatial_cross_val_split(
     ds_df[f"{split_col}_bin"] = pd.cut(ds_df[split_col], bins)
     ds_df = pd.merge(ds_df, bins_df, on=f"{split_col}_bin")
     # split into train / test data
-    test_valid_patches = ds_df[ds_df["group"] == eval_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
+    test_valid_patches = ds_df[ds_df["group"] == test_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     test_ds = TiffDataset(
         tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
         patch_size=ds.patch_size, 
         stage=ds.stage,
         valid_patches=test_valid_patches
     )
-    ds_valid_patches = ds_df[ds_df["group"] != eval_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
+    val_valid_patches = ds_df[ds_df["group"] == val_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
+    val_ds = TiffDataset(
+        tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size, 
+        stage=ds.stage,
+        valid_patches=val_valid_patches
+    )
+    ds_valid_patches = ds_df[(ds_df["group"] != test_set) & (ds_df["group"] != val_set)].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     ds = TiffDataset(
         tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
         patch_size=ds.patch_size, 
         stage=ds.stage,
         valid_patches=ds_valid_patches
     )
-    return ds, test_ds
+    return ds, val_ds, test_ds
 
 
 def filter_by_bounds(ds, bounds):
