@@ -122,7 +122,9 @@ class TiffDataset(Dataset):
         patch = self.tif_data[source_tif][:-1,row:row+self.patch_size,col:col+self.patch_size]
         
         if self.stage == "predict":
-            return patch, label, col, row # produce map
+            lon = self.valid_patches[idx,-3]
+            lat = self.valid_patches[idx,-2]
+            return patch, label, lon, lat # produce map
         else:
             return patch, label # train/val/test
 
@@ -139,7 +141,7 @@ def validate_patches(chunk, patch_size, tif_file):
     with rio_open(tif_file) as f:
         for x, y in chunk_iter:
             patch = f.read(window=Window(x, y, patch_size, patch_size))
-            if patch.shape != (f.count, patch_size, patch_size) or (patch == f.nodata).any(): continue
+            if patch.shape != (f.count, patch_size, patch_size) or np.isnan(patch).any(): continue
             records.append([x, y, patch[-1, patch_size//2, patch_size//2]])
         tif_tfm = f.transform
     

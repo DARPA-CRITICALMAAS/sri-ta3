@@ -8,29 +8,30 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mvt", "resnet", 'uscan']
-task_name: "cmaasta3-demo"
+tags: ["mvt", "resnet"]
+task_name: "cmta3-train-all-l22"
 
 seed: 1234
 
 data:
   batch_size: 1024
-  num_workers: 12
+  tif_dir: ${paths.data_dir}/LAWLEY22-DATACUBE-ALL
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
-  predict_bounds: [-106.61, 24.28, -59.36, 49.86]
+  # predict_bounds: [-106.61, 24.28, -59.36, 49.86] # eastern US
+  predict_bounds: [-178.28, 24.19, -51.93, 83.61] # entire north america
 
 model:
   optimizer:
-    lr: 0.00020900562511709243
-    weight_decay: 0.0001
+    lr: 0.00037698725175480376
+    weight_decay: 0
   net:
     _target_: src.models.resnet.ResNet
-    num_input_channels: 12
+    num_input_channels: 73
     num_output_classes: 1
-    dropout_rate: 0.2
+    dropout_rate: 0.6
   compile: false
-  gain: 503.0
+  gain: 581.0
   mc_samples: 100
 
 trainer:
@@ -42,4 +43,4 @@ trainer:
 
 logger:
   wandb:
-    name: "l22_resnet_best_nov5"
+    name: "l22_all_resnet_uscanaus_tune"

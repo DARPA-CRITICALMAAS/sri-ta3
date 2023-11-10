@@ -68,7 +68,7 @@ class CMALitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(gain))
+        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
 
         # metric objects for calculating and averaging AUC across batches
         self.val_auc = BinaryAUROC(thresholds=None)
@@ -188,6 +188,7 @@ class CMALitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
+        # extracts feature attributions
         ig = IntegratedGradients(self.net)
         attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2))
 

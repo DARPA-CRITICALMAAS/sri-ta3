@@ -62,7 +62,7 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
 
     log.info("Outputing a map tiff!")
     tif_file_path = f"{cfg.paths.output_dir}"
-    utils.write_tif(trainer.results, cfg.data.predict_bounds, cfg.data.patch_size, tif_file_path)
+    utils.write_tif(trainer.results, cfg.data.predict_bounds, tif_file_path)
 
     test_metrics = trainer.callback_metrics
 
