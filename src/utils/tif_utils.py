@@ -122,7 +122,6 @@ def write_tif(results, bounds, path):
         tif_data = np.empty(shape=(height, width))
         tif_data[:] = np.nan
         tif_data[result_pts[:,1], result_pts[:,0]] = data[:,idx].astype(float)
-        print(tif_data.max())
         
         # writes the output tif
         tif_file = f"{path}/{tif_layer}_{str_bounds(bounds)}.tif"
