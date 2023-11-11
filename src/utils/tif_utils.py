@@ -129,6 +129,20 @@ def write_tif(results, bounds, path):
         with rio.open(tif_file, "w", **tiff_meta) as out:
             out.write_band(1, tif_data)
 
+    # outputs a feature importance map, with the most important feature per pixel
+    tif_data = np.empty(shape=(height, width))
+    tif_data[:] = np.nan
+    data_overall = np.argmax(data[:,2:].astype(float), axis=1)
+    data_overall[(data_overall>=20) & (data_overall<=28)] = 20 # Geology_Lithology_Majority
+    data_overall[(data_overall>=29) & (data_overall<=38)] = 21 # Geology_Lithology_Minority
+    data_overall[(data_overall>=39) & (data_overall<=55)] = 22 # Geology_Period_Maximum_Majority
+    data_overall[(data_overall>=56) & (data_overall<=72)] = 23 # Geology_Period_Minimum_Majority
+
+    tif_data[result_pts[:,1], result_pts[:,0]] = data_overall.astype(float)
+    tif_file = f"{path}/overall_{str_bounds(bounds)}.tif"
+    with rio.open(tif_file, "w", **tiff_meta) as out:
+        out.write_band(1, tif_data)
+
 
 def str_bounds(bounds):
     # makes linux compatible str of lon/lat bounds
