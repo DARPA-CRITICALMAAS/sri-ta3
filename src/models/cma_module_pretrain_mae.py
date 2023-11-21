@@ -1,9 +1,12 @@
 from typing import Any, Dict, Tuple
 
 import torch
+import math
 from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
+
+from torchmetrics.image import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
+
 import rasterio as rio
 from captum.attr import IntegratedGradients
 
@@ -49,8 +52,8 @@ class CMALitModule(LightningModule):
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
-        gain: float,
         mc_samples: int,
+        warmup_epoch: int,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -68,24 +71,23 @@ class CMALitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
+        # self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
 
-        # metric objects for calculating and averaging AUC across batches
-        self.val_auc = BinaryAUROC(thresholds=None)
-        self.test_auc = BinaryAUROC(thresholds=None)
+        # metric objects for calculating reconstruction ability of the model
+        self.val_ssim = StructuralSimilarityIndexMeasure()
+        self.val_psnr = PeakSignalNoiseRatio()
 
-        # metric objects for calculating and averaging area under 
-        # the precision-recall curve (AUPRC) across batches
-        self.val_auprc = BinaryAveragePrecision(thresholds=None)
-        self.test_auprc = BinaryAveragePrecision(thresholds=None)
+        self.test_ssim = StructuralSimilarityIndexMeasure()
+        self.test_psnr = PeakSignalNoiseRatio()
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
 
-        # for tracking best so far validation AUC
-        self.val_auc_best = MaxMetric()
+        # for tracking best so far validation ssim/psnr
+        self.val_ssim_best = MaxMetric()
+        self.val_psnr_best = MaxMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -100,8 +102,12 @@ class CMALitModule(LightningModule):
         # by default lightning executes validation step sanity checks before training starts,
         # so it's worth to make sure validation metrics don't store results from these checks
         self.val_loss.reset()
-        self.val_auc.reset()
-        self.val_auc_best.reset()
+
+        self.val_ssim.reset()
+        self.val_psnr.reset()
+
+        self.val_ssim_best.reset()
+        self.val_psnr_best.reset()
 
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
@@ -115,11 +121,10 @@ class CMALitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        x, y = batch
-        logits = self.forward(x)
-        loss = self.criterion(logits, y.unsqueeze(1))
-        preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
-        return loss, preds, y
+        img, _ = batch
+        pred_img, mask = self.forward(img)
+        loss = self.calculate_mse(img, pred_img, mask=mask, corrected=True) / self.net.mask_ratio
+        return loss, img, pred_img, mask
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -131,7 +136,7 @@ class CMALitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, _, _ = self.model_step(batch)
+        loss, _, _, _ = self.model_step(batch)
 
         # update and log metrics
         self.train_loss(loss.item())
@@ -139,6 +144,10 @@ class CMALitModule(LightningModule):
 
         # return loss or backpropagation will fail
         return loss
+
+    def on_train_epoch_start(self) -> None:
+        "Lightning hook that is called when a training epoch begins."
+        pass
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
@@ -151,23 +160,36 @@ class CMALitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, img, pred_img, mask = self.model_step(batch)
 
         # update and log metrics
         self.val_loss(loss.item())
-        self.val_auc(preds.detach(), targets.detach())
-        self.val_auprc(preds.detach().squeeze(), targets.detach().squeeze().to(torch.int))
+
+        # self.val_ssim(img.detach(), pred_img.detach())
+        self.val_ssim(img.detach() * mask.detach(), 
+                      pred_img.detach() * mask.detach())
+        # self.val_ssim(torch.where(mask.detach() == 1, img.detach(), torch.mean(img.detach())), 
+        #               torch.where(mask.detach() == 1, pred_img.detach(), torch.mean(img.detach())))
+
+        # self.val_psnr(img.detach(), pred_img.detach())
+        self.val_psnr(img.detach() * mask.detach(), 
+                      pred_img.detach() * mask.detach())
+        # self.val_psnr(img.detach()[mask.detach()==1], 
+        #               pred_img.detach()[mask.detach()==1])
+
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/ssim", self.val_ssim, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/psnr", self.val_psnr, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
-        auc = self.val_auc.compute()  # get current val auc
-        self.val_auc_best(auc)  # update best so far val auc
-        # log `val_auc_best` as a value through `.compute()` method, instead of as a metric object
-        # otherwise metric would be reset by lightning after each epoch
-        self.log("val/auc_best", self.val_auc_best.compute(), sync_dist=True, prog_bar=True)
+        ssim = self.val_ssim.compute()  # get current val ssim
+        self.val_ssim_best(ssim)  # update best so far val ssim
+        psnr = self.val_psnr.compute()  # get current val psnr
+        self.val_psnr_best(psnr)  # update best so far val psnr
+
+        self.log("val/ssim_best", self.val_ssim_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/psnr_best", self.val_psnr_best.compute(), sync_dist=True, prog_bar=True)
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
@@ -176,15 +198,16 @@ class CMALitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, img, pred_img, mask = self.model_step(batch)
 
         # update and log metrics
         self.test_loss(loss.item())
-        self.test_auc(preds.detach(), targets.detach())
-        self.test_auprc(preds.detach().squeeze(), targets.detach().squeeze().to(torch.int))
+        self.test_ssim(img.detach() * mask.detach(), pred_img.detach() * mask.detach())
+        self.test_psnr(img.detach() * mask.detach(), pred_img.detach() * mask.detach())
+
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/ssim", self.test_ssim, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/psnr", self.test_psnr, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
@@ -243,7 +266,8 @@ class CMALitModule(LightningModule):
         """
         optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
         if self.hparams.scheduler is not None:
-            scheduler = self.hparams.scheduler(optimizer=optimizer)
+            lr_func = lambda epoch: min((epoch + 1) / (self.hparams.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / self.trainer.max_epochs * math.pi) + 1))
+            scheduler = self.hparams.scheduler(optimizer=optimizer, lr_lambda=lr_func)
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {
@@ -254,6 +278,18 @@ class CMALitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+    
+    def calculate_mse(self, original, reconstructed, mask=None, corrected=True):
+        if mask is None:
+            return torch.mean((original - reconstructed) ** 2)
+        else:
+            if corrected:
+                masked_original = original[mask == 1]
+                masked_reconstructed = reconstructed[mask == 1]
+            else:
+                masked_original = original * mask
+                masked_reconstructed = reconstructed * mask
+            return torch.mean((masked_original - masked_reconstructed) ** 2)
 
 
 if __name__ == "__main__":
