@@ -119,7 +119,7 @@ class TiffDataset(Dataset):
         source_tif = int(self.valid_patches[idx,-1])
         
         # loads the patch's data
-        patch = self.tif_data[source_tif][:-1,row:row+self.patch_size,col:col+self.patch_size]
+        patch = self.tif_data[source_tif][:-2,row:row+self.patch_size,col:col+self.patch_size]
         
         if self.stage == "predict":
             lon = self.valid_patches[idx,-3]
@@ -142,7 +142,7 @@ def validate_patches(chunk, patch_size, tif_file):
         for x, y in chunk_iter:
             patch = f.read(window=Window(x, y, patch_size, patch_size))
             if patch.shape != (f.count, patch_size, patch_size) or np.isnan(patch).any(): continue
-            records.append([x, y, patch[-1, patch_size//2, patch_size//2]])
+            records.append([x, y, patch[-1, patch_size//2, patch_size//2], patch[-2, patch_size//2, patch_size//2]])
         tif_tfm = f.transform
     
     # creates dataframe cataloging valid patches
@@ -155,7 +155,7 @@ def validate_patches(chunk, patch_size, tif_file):
         pts = np.dot(np.asarray(tif_tfm.column_vectors).T, np.vstack((cols, rows, np.ones_like(rows)))).T
         records = np.hstack([records, pts])
     else:
-        records = np.empty(shape=(0,5))
+        records = np.empty(shape=(0,6))
     
     return records
 
@@ -173,10 +173,10 @@ def spatial_cross_val_split(
     ds_df = pd.DataFrame(
         data=ds.valid_patches, 
         index=np.arange(ds.valid_patches.shape[0]), 
-        columns=["x","y","label","lon", "lat","source"]
+        columns=["x","y","label","split","lon","lat","source"]
     )
     # select only the deposit/occurence/neighbor present samples
-    target_df = np.unique(ds_df.loc[ds_df["label"] == True, split_col].values)
+    target_df = np.unique(ds_df.loc[ds_df["split"] == True, split_col].values)
     # bin the latitudes into sizes of 1-3 samples per bin
     if nbins is None:
         nbins = ceil(len(target_df) / samples_per_bin)
@@ -206,7 +206,8 @@ def spatial_cross_val_split(
         tif_data=ds.tif_data,
         patch_size=ds.patch_size, 
         stage=ds.stage,
-        valid_patches=val_valid_patches
+        valid_patches=val_valid_patches,
+        uscan_only=ds.uscan_only,
     )
     ds_valid_patches = ds_df[(ds_df["group"] != test_set) & (ds_df["group"] != val_set)].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     ds = TiffDataset(

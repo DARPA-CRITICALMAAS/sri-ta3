@@ -9,13 +9,15 @@ defaults:
 # this allows you to overwrite only specified parameters
 
 tags: ["mvt", "resnet"]
-task_name: "cmta3-train-all-l22"
+task_name: "cmta3-train-all-l22-release"
 
 seed: 1234
 
 data:
   batch_size: 1024
-  tif_dir: ${paths.data_dir}/LAWLEY22-DATACUBE-ALL
+  tif_dir: ${paths.data_dir}/LAWLEY22-DATACUBE-ALL2
+  val_set: 0
+  test_set: 4
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
   # predict_bounds: [-106.61, 24.28, -59.36, 49.86] # eastern US
@@ -27,11 +29,11 @@ model:
     weight_decay: 0
   net:
     _target_: src.models.resnet.ResNet
-    num_input_channels: 73
+    num_input_channels: 72
     num_output_classes: 1
     dropout_rate: 0.6
   compile: false
-  gain: 581.0
+  gain: 2783.0
   mc_samples: 100
 
 trainer:
