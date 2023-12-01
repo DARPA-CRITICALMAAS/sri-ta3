@@ -6,6 +6,8 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 
 from torchmetrics.image import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
+from torchmetrics.functional.image import structural_similarity_index_measure
+import torch.nn.functional as F
 
 import rasterio as rio
 from captum.attr import IntegratedGradients
@@ -123,7 +125,14 @@ class CMALitModule(LightningModule):
         """
         img, _ = batch
         pred_img, mask = self.forward(img)
-        loss = self.calculate_mse(img, pred_img, mask=mask, corrected=True) / self.net.mask_ratio
+
+        # loss = torch.mean((img[mask == 1] - pred_img[mask == 1]) ** 2) / self.net.mask_ratio
+        # loss = (0.9 * torch.mean(torch.abs(img[mask == 1] - pred_img[mask == 1])) +
+        #         0.1 * torch.mean((img[mask == 1] - pred_img[mask == 1]) ** 2))/ self.net.mask_ratio
+        img_mean = torch.mean(img)
+        loss = (0.9 * torch.mean(torch.abs(img[mask == 1] - pred_img[mask == 1])) +
+                0.1 * torch.mean((img[mask == 1] - pred_img[mask == 1]) ** 2) +
+                0.75 * (1.0 - structural_similarity_index_measure(torch.where(mask == 1, img, img_mean), torch.where(mask == 1, pred_img, img_mean)))) / self.net.mask_ratio
         return loss, img, pred_img, mask
 
     def training_step(

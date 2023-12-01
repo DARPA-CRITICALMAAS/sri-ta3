@@ -2,15 +2,15 @@
 
 defaults:
   - override /data: l22_mvt_tiff.yaml
-  - override /model: maevit_pretrain.yaml
+  - override /model: maevit_classifier.yaml
   - override /trainer: gpu
   - override /callbacks: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mvt", "vit", 'uscan', 'mae-pretrain']
-task_name: "cmta3-pretrain-maevit"
+tags: ["mvt", "vit", 'uscan', 'mae-classifier']
+task_name: "cmta3-classifier-maevit"
 
 seed: 1234
 
@@ -26,8 +26,8 @@ model:
   optimizer:
     lr: 0.001
     weight_decay: 0.0001
-  warmup_epoch: 3
-  net:
+  # warmup_epoch: 3
+  pretrained_net:
     _target_: src.models.mae_vit.MAE_ViT
     image_size: 33
     patch_size: 11
@@ -38,9 +38,14 @@ model:
     encoder_head: 3
     decoder_layer: 4
     decoder_head: 3
-    mask_ratio: 0.75
+    mask_ratio: 0.
+  pretrained_checkpoint_path: "logs/cmta3-pretrain-maevit/runs/2023-11-29_05-36-30/checkpoints/epoch_015.ckpt"
+  net:
+    _target_: src.models.mae_vit_classifier.patch_classifier_w_AdaptiveAvgPool1d_across_patch_dim
   compile: false
   mc_samples: 100
+  gain: 1000
+  
   
 trainer:
   max_epochs: 30
@@ -53,10 +58,10 @@ trainer:
 
 logger:
   wandb:
-    name: "maevit_pretrain_l22_all_uscan_0.9l1_0.1l2_0.75ssim_loss"
+    name: "maevit_classifier_l22_all_uscan_run02"
 
 callbacks:
   model_checkpoint:
-    monitor: val/psnr
+    monitor: val/auprc
   early_stopping:
-    monitor: val/psnr_best
+    monitor: val/auprc_best

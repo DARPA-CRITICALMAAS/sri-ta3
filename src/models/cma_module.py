@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 import torch
 from pytorch_lightning import LightningModule
@@ -6,6 +6,8 @@ from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
 import rasterio as rio
 from captum.attr import IntegratedGradients
+
+from models.mae_vit_classifier import patch_classifier_w_AdaptiveAvgPool1d_across_patch_dim
 
 from src import utils
 log = utils.get_pylogger(__name__)
@@ -51,6 +53,8 @@ class CMALitModule(LightningModule):
         compile: bool,
         gain: float,
         mc_samples: int,
+        pretrained_net: Optional[torch.nn.Module] = None,
+        pretrained_checkpoint_path: Optional[float] = None,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -65,7 +69,18 @@ class CMALitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False, ignore=['net'])
 
-        self.net = net
+        # breakpoint()
+        if pretrained_net is not None and pretrained_checkpoint_path is not None:
+            # pretrained_model = pretrained_net.load_from_checkpoint(pretrained_path)
+            checkpoint = torch.load(pretrained_checkpoint_path, map_location=lambda storage, loc: storage)
+            # temporal solution - removing "net." from parameter names net.encoder.bias -> encoder.bias
+            checkpoint['state_dict'] = {f'{k[4:]}': v for k,v in checkpoint['state_dict'].items()} 
+
+            pretrained_net.load_state_dict(checkpoint['state_dict'])
+            # pretrained_net.requires_grad_(False)
+            self.net = patch_classifier_w_AdaptiveAvgPool1d_across_patch_dim(pretrained_net.encoder)
+        else:
+            self.net = net
 
         # loss function
         self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
@@ -86,6 +101,7 @@ class CMALitModule(LightningModule):
 
         # for tracking best so far validation AUC
         self.val_auc_best = MaxMetric()
+        self.val_auprc_best = MaxMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -164,10 +180,13 @@ class CMALitModule(LightningModule):
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
         auc = self.val_auc.compute()  # get current val auc
+        auprc = self.val_auprc.compute()
         self.val_auc_best(auc)  # update best so far val auc
+        self.val_auprc_best(auprc)
         # log `val_auc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
         self.log("val/auc_best", self.val_auc_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/auprc_best", self.val_auprc_best.compute(), sync_dist=True, prog_bar=True)
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.

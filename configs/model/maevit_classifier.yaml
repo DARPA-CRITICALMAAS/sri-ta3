@@ -1,0 +1,27 @@
+_target_: src.models.cma_module.CMALitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 1e-4
+  weight_decay: 1e-2
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+pretrained_net:
+    _target_: src.models.mae_vit.MAE_ViT
+
+net:
+  _target_: src.models.mae_vit.MAE_ViT
+
+# compile model for faster training with pytorch 2.0
+compile: false
+
+mc_samples: 100
+
+pretrained_checkpoint_path: None

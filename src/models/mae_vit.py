@@ -38,13 +38,13 @@ class PatchShuffle(torch.nn.Module):
 
 class MAE_Encoder(torch.nn.Module):
     def __init__(self,
-                 image_size:    int = 64,
-                 patch_size:    int = 8,
-                 input_dim:     int = 3,
+                 image_size:    int = 33,
+                 patch_size:    int = 11,
+                 input_dim:     int = 73,
                  emb_dim:       int = 192,
                  num_layer:     int = 12,
                  num_head:      int = 3,
-                 mask_ratio:    float = 0.75,
+                 mask_ratio:    float = 0.0,
                  ) -> None:
         super().__init__()
 
@@ -57,6 +57,8 @@ class MAE_Encoder(torch.nn.Module):
         self.transformer = torch.nn.Sequential(*[Block(emb_dim, num_head) for _ in range(num_layer)])
 
         self.layer_norm = torch.nn.LayerNorm(emb_dim)
+
+        self.emb_dim = emb_dim
 
         self.init_weight()
 
@@ -81,10 +83,10 @@ class MAE_Encoder(torch.nn.Module):
 
 class MAE_Decoder(torch.nn.Module):
     def __init__(self,
-                 image_size:    int = 64,
-                 patch_size:    int = 8,
+                 image_size:    int = 33,
+                 patch_size:    int = 11,
                  emb_dim:       int = 192,
-                 output_dim:    int = 3,
+                 output_dim:    int = 73,
                  num_layer:     int = 4,
                  num_head:      int = 3,
                  ) -> None:
@@ -127,16 +129,16 @@ class MAE_Decoder(torch.nn.Module):
 
 class MAE_ViT(torch.nn.Module):
     def __init__(self,
-                 image_size:        int = 64,
-                 patch_size:        int = 8,
-                 input_dim:         int = 3,
+                 image_size:        int = 33,
+                 patch_size:        int = 11,
+                 input_dim:         int = 73,
                  emb_dim:           int = 192,
-                 output_dim:        int = 3,
+                 output_dim:        int = 73,
                  encoder_layer:     int = 12,
                  encoder_head:      int = 3,
                  decoder_layer:     int = 4,
                  decoder_head:      int = 3,
-                 mask_ratio:        float = 0.75,
+                 mask_ratio:        float = 0.0,
                  ) -> None:
         super().__init__()
         self.mask_ratio = mask_ratio
