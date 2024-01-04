@@ -13,11 +13,8 @@ scheduler:
   factor: 0.1
   patience: 10
 
-pretrained_net:
-    _target_: src.models.mae_vit.MAE_ViT
-
 net:
-  _target_: src.models.mae_vit.MAE_ViT
+  _target_: src.models.mae_vit_classifer.CLSClassifer
 
 # compile model for faster training with pytorch 2.0
 compile: false

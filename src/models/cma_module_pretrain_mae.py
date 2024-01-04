@@ -6,16 +6,14 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 
 from torchmetrics.image import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
-from torchmetrics.functional.image import structural_similarity_index_measure
-import torch.nn.functional as F
-
-import rasterio as rio
+from torchmetrics.functional.image import structural_similarity_index_measure as ssim
 from captum.attr import IntegratedGradients
 
 from src import utils
 log = utils.get_pylogger(__name__)
 
-class CMALitModule(LightningModule):
+
+class SSCMALitModule(LightningModule):
     """Example of a `LightningModule` for MNIST classification.
 
     A `LightningModule` implements 8 key methods:
@@ -110,6 +108,19 @@ class CMALitModule(LightningModule):
 
         self.val_ssim_best.reset()
         self.val_psnr_best.reset()
+    
+    def compute_loss(
+        self, img: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor
+    ) -> torch.Tensor:
+        
+        # calculates L1 loss
+        # loss = torch.abs(pred[mask==1] - img[mask==1]).mean()
+        # calculates L2 loss
+        loss = torch.pow(pred[mask==1] - img[mask==1], 2).mean()
+        # calculates SSIM loss
+        # loss += 0.75 * (1.0 - ssim(torch.where(mask == 1, img, 0.0), torch.where(mask == 1, pred, 0.0), reduction="sum") / mask.sum())
+        
+        return loss
 
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
@@ -125,14 +136,8 @@ class CMALitModule(LightningModule):
         """
         img, _ = batch
         pred_img, mask = self.forward(img)
-
-        # loss = torch.mean((img[mask == 1] - pred_img[mask == 1]) ** 2) / self.net.mask_ratio
-        # loss = (0.9 * torch.mean(torch.abs(img[mask == 1] - pred_img[mask == 1])) +
-        #         0.1 * torch.mean((img[mask == 1] - pred_img[mask == 1]) ** 2))/ self.net.mask_ratio
-        img_mean = torch.mean(img)
-        loss = (0.9 * torch.mean(torch.abs(img[mask == 1] - pred_img[mask == 1])) +
-                0.1 * torch.mean((img[mask == 1] - pred_img[mask == 1]) ** 2) +
-                0.75 * (1.0 - structural_similarity_index_measure(torch.where(mask == 1, img, img_mean), torch.where(mask == 1, pred_img, img_mean)))) / self.net.mask_ratio
+        loss = self.compute_loss(img, pred_img, mask)
+        
         return loss, img, pred_img, mask
 
     def training_step(
@@ -173,18 +178,8 @@ class CMALitModule(LightningModule):
 
         # update and log metrics
         self.val_loss(loss.item())
-
-        # self.val_ssim(img.detach(), pred_img.detach())
-        self.val_ssim(img.detach() * mask.detach(), 
-                      pred_img.detach() * mask.detach())
-        # self.val_ssim(torch.where(mask.detach() == 1, img.detach(), torch.mean(img.detach())), 
-        #               torch.where(mask.detach() == 1, pred_img.detach(), torch.mean(img.detach())))
-
-        # self.val_psnr(img.detach(), pred_img.detach())
-        self.val_psnr(img.detach() * mask.detach(), 
-                      pred_img.detach() * mask.detach())
-        # self.val_psnr(img.detach()[mask.detach()==1], 
-        #               pred_img.detach()[mask.detach()==1])
+        self.val_ssim(img.detach() * mask.detach(), pred_img.detach() * mask.detach())
+        self.val_psnr(img.detach() * mask.detach(), pred_img.detach() * mask.detach())
 
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/ssim", self.val_ssim, on_step=False, on_epoch=True, prog_bar=True)
@@ -287,19 +282,7 @@ class CMALitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-    
-    def calculate_mse(self, original, reconstructed, mask=None, corrected=True):
-        if mask is None:
-            return torch.mean((original - reconstructed) ** 2)
-        else:
-            if corrected:
-                masked_original = original[mask == 1]
-                masked_reconstructed = reconstructed[mask == 1]
-            else:
-                masked_original = original * mask
-                masked_reconstructed = reconstructed * mask
-            return torch.mean((masked_original - masked_reconstructed) ** 2)
 
 
 if __name__ == "__main__":
-    _ = CMALitModule(None, None, None, None)
+    _ = SSCMALitModule(None, None, None, None)

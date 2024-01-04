@@ -4,10 +4,8 @@ import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
-import rasterio as rio
 from captum.attr import IntegratedGradients
 
-from models.mae_vit_classifier import patch_classifier_w_AdaptiveAvgPool1d_across_patch_dim
 
 from src import utils
 log = utils.get_pylogger(__name__)
@@ -69,18 +67,7 @@ class CMALitModule(LightningModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False, ignore=['net'])
 
-        # breakpoint()
-        if pretrained_net is not None and pretrained_checkpoint_path is not None:
-            # pretrained_model = pretrained_net.load_from_checkpoint(pretrained_path)
-            checkpoint = torch.load(pretrained_checkpoint_path, map_location=lambda storage, loc: storage)
-            # temporal solution - removing "net." from parameter names net.encoder.bias -> encoder.bias
-            checkpoint['state_dict'] = {f'{k[4:]}': v for k,v in checkpoint['state_dict'].items()} 
-
-            pretrained_net.load_state_dict(checkpoint['state_dict'])
-            # pretrained_net.requires_grad_(False)
-            self.net = patch_classifier_w_AdaptiveAvgPool1d_across_patch_dim(pretrained_net.encoder)
-        else:
-            self.net = net
+        self.net = net
 
         # loss function
         self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))

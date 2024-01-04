@@ -1,10 +1,10 @@
 # @package _global_
 
 defaults:
-  - override /data: l22_mvt_tiff.yaml
-  - override /model: maevit_pretrain.yaml
+  - override /data: l22_mvt_tiff
+  - override /model: maevit_pretrain
   - override /trainer: gpu
-  - override /callbacks: default.yaml
+  - override /callbacks: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
@@ -24,7 +24,7 @@ data:
 
 model:
   optimizer:
-    lr: 0.001
+    lr: 0.005
     weight_decay: 0.0001
   warmup_epoch: 3
   net:
@@ -32,12 +32,13 @@ model:
     image_size: 33
     patch_size: 11
     input_dim: 73
-    emb_dim: 192
+    enc_dim: 256
+    dec_dim: 128
     output_dim: 73
-    encoder_layer: 12
-    encoder_head: 3
-    decoder_layer: 4
-    decoder_head: 3
+    encoder_layer: 6
+    encoder_head: 8
+    decoder_layer: 2
+    decoder_head: 4
     mask_ratio: 0.75
   compile: false
   mc_samples: 100

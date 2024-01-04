@@ -19,7 +19,7 @@ shapely
 s2sphere==0.2.5
 # --------- others --------- #
 pyrootutils     # standardizing the project root setup
-rich            # beautiful text formatting in terminal
+rich==13.6.0            # beautiful text formatting in terminal
 scipy
 scikit-learn
 pyyaml
