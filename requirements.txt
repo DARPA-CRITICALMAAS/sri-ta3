@@ -1,5 +1,5 @@
 # --------- pytorch --------- #
-pytorch-lightning==1.9.4
+pytorch-lightning>=1.9.4,<2.0.0
 torchinfo
 timm
 torchmetrics>=0.11.4
@@ -10,23 +10,23 @@ hydra-colorlog
 hydra-optuna-sweeper
 # --------- loggers --------- #
 wandb
-tensorboardx
+# tensorboardx
 # --------- geolibs --------- #
 rasterio>=1.2.10,<2.0.0
 geopandas>=0.12.2,<1.0.0
-fiona>=1.8.22,<2.0.0
-shapely
-s2sphere==0.2.5
+# fiona>=1.8.22,<2.0.0
+# shapely
+# s2sphere==0.2.5
 # --------- others --------- #
 pyrootutils     # standardizing the project root setup
 rich==13.6.0            # beautiful text formatting in terminal
-scipy
-scikit-learn
-pyyaml
+# scipy
+# scikit-learn
+# pyyaml
 tqdm
 pandas
-jupyterlab
-matplotlib
+# jupyterlab
+# matplotlib
 glob2
 numpy
 captum          # for Integrated Gradients
