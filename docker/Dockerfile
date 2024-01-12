@@ -1,7 +1,7 @@
-# Start from CVT base image available at artifactory.
+# loads base image
 FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime
 
-# Install some basic utilities
+# installs some basic utilities
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     git \
     curl \
@@ -16,18 +16,16 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
 RUN conda install -c conda-forge "gdal>=3.0.2, <4.0.0"
 
 # Install dependencies
-COPY requirements.txt /
-RUN pip3 install -r /requirements.txt
-RUN pip3 cache remove *
+RUN python3 -m pip install --upgrade pip wheel
+COPY setup.py /workspace/
+COPY README.md /workspace/
+COPY sri-maper /workspace/sri-maper
+RUN python3 -m pip install -e .
 
 # Install .autoenv for automatic conda env activation and tab completion
-RUN echo "autoenv() { [[ -f \"\$PWD/.autoenv\" ]] && source .autoenv ; } ; cd() { builtin cd \"\$@\" ; autoenv ; } ; autoenv" >> ~/.bashrc
+# RUN echo "autoenv() { [[ -f \"\$PWD/.autoenv\" ]] && source .autoenv ; } ; cd() { builtin cd \"\$@\" ; autoenv ; } ; autoenv" >> ~/.bashrc
 
 # Add local files
-COPY .project-root /workspace/
-RUN mkdir /workspace/src
-RUN mkdir /workspace/configs
-RUN mkdir /workspace/scripts
 RUN mkdir /workspace/data
 RUN mkdir /workspace/logs
 

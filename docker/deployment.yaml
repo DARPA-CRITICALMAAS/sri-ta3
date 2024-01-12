@@ -41,7 +41,7 @@ spec:
       - name: ${SECRET}
       containers:
         - name: ${PROJECT_NAME}
-          image: ${REPO_HOST}/${REPO}:${PROJECT_NAME}-${USER}-v${VERSION}
+          image: ${REPO_HOST}/${REPO}:${PROJECT_NAME}-${DUSER}-v${VERSION}
 
           workingDir: /workspace
           resources:
@@ -61,18 +61,8 @@ spec:
           volumeMounts:
             # Working directory for source code
             - name: rw-vol
-              subPath: ${USER}/code/${SRC_PATH}
-              mountPath: /workspace/src
-
-            # Working directory for config files
-            - name: rw-vol
-              subPath: ${USER}/code/${CONFIG_PATH}
-              mountPath: /workspace/configs
-            
-            # Working directory for scripts
-            - name: rw-vol
-              subPath: ${USER}/code/${SCRIPTS_PATH}
-              mountPath: /workspace/scripts
+              subPath: ${DUSER}/code/${K8_SRC_PATH}
+              mountPath: /workspace/${SRC_PATH}
             
             # shared directory for storing data
             - name: ro-vol
@@ -81,7 +71,7 @@ spec:
 
             # Working directory for checkpoints, output, etc.
             - name: rw-vol
-              subPath: ${USER}/logs
+              subPath: ${DUSER}/logs
               mountPath: /workspace/logs
 
             # Virtual memory

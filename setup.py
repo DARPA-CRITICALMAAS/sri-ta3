@@ -6,7 +6,6 @@ https://packaging.python.org/guides/distributing-packages-using-setuptools/
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
 import pathlib
-from pip.req import parse_requirements
 
 here = pathlib.Path(__file__).parent.resolve()
 
@@ -110,7 +109,25 @@ setup(
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/discussions/install-requires-vs-requirements/
-    install_requires = parse_requirements('requirements.txt', session='hack'),
+    install_requires = [
+        "pytorch-lightning>=1.9.4,<2.0.0",
+        "torchinfo",
+        "timm",
+        "torchmetrics>=0.11.4",
+        "einops",
+        "hydra-core",
+        "hydra-colorlog",
+        "hydra-optuna-sweeper",
+        "wandb",
+        "rasterio>=1.2.10,<2.0.0",
+        "geopandas>=0.12.2,<1.0.0",
+        "rich==13.6.0",
+        "tqdm",
+        "pandas",
+        "glob2",
+        "numpy",
+        "captum",
+    ],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"

@@ -9,6 +9,6 @@ export REPO="${NAMESPACE}"
 export RW_VOLUME="${NAMESPACE}-rw"
 export RO_VOLUME="${NAMESPACE}-ro"
 
-envsubst < k8s/base/deployment.yaml > k8s/base/deployment.gen.yaml
+envsubst < docker/deployment.yaml > docker/deployment.gen.yaml
 
-kubectl apply -f k8s/base/deployment.gen.yaml
+kubectl apply -f docker/deployment.gen.yaml
