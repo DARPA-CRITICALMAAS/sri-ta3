@@ -4,6 +4,7 @@ defaults:
   - override /data: l22_mvt_tiff.yaml
   - override /model: resnet.yaml
   - override /trainer: gpu
+  - override /callbacks: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
@@ -19,7 +20,8 @@ data:
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
   # predict_bounds: [-106.61, 24.28, -59.36, 49.86] # eastern US
-  predict_bounds: [-178.28, 24.19, -51.93, 83.61] # entire north america
+  # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # entire north america
+  predict_bounds: [-96.765, 34.723, -87.557, 39.802] # MVT prospective area
 
 model:
   optimizer:
@@ -33,8 +35,11 @@ model:
   compile: false
   gain: 581.0
   mc_samples: 100
+  smoothing: 0.0001
+  threshold: 0.5
 
 trainer:
+  min_epochs: 5
   max_epochs: 100
   limit_train_batches: 0.1
   limit_val_batches: 0.1
@@ -44,3 +49,9 @@ trainer:
 logger:
   wandb:
     name: "l22_all_resnet_uscanaus_tune"
+
+callbacks:
+  model_checkpoint:
+    monitor: val/auprc
+  early_stopping:
+    monitor: val/auprc_best

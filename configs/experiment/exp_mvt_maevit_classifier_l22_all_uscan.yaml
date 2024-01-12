@@ -28,7 +28,7 @@ model:
     weight_decay: 0.0001
 
   net:
-    _target_: src.models.mae_vit_classifier.CLSClassifer
+    _target_: src.models.mae_vit_classifier.AttnPatchClassifier
     backbone_ckpt: "logs/cmta3-pretrain-maevit/runs/2023-12-18_22-03-47/checkpoints/epoch_009.ckpt"
     backbone_net:
       _target_: src.models.mae_vit.MAE_ViT

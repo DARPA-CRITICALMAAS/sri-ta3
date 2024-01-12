@@ -3,7 +3,7 @@ from typing import Any, Dict, Tuple, Optional
 import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
+from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision, MulticlassAccuracy, BinaryAccuracy, BinaryMatthewsCorrCoef, BinaryF1Score
 from captum.attr import IntegratedGradients
 
 
@@ -51,8 +51,8 @@ class CMALitModule(LightningModule):
         compile: bool,
         gain: float,
         mc_samples: int,
-        pretrained_net: Optional[torch.nn.Module] = None,
-        pretrained_checkpoint_path: Optional[float] = None,
+        smoothing: float,
+        threshold: float = 0.5,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -80,6 +80,12 @@ class CMALitModule(LightningModule):
         # the precision-recall curve (AUPRC) across batches
         self.val_auprc = BinaryAveragePrecision(thresholds=None)
         self.test_auprc = BinaryAveragePrecision(thresholds=None)
+
+        # additional metrics
+        self.test_bal_acc = MulticlassAccuracy(num_classes=2, average="macro")
+        self.test_acc = BinaryAccuracy(threshold=0.5)
+        self.test_mcc = BinaryMatthewsCorrCoef(threshold=0.5)
+        self.test_f1 = BinaryF1Score(threshold=0.5)
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -120,8 +126,8 @@ class CMALitModule(LightningModule):
         """
         x, y = batch
         logits = self.forward(x)
-        loss = self.criterion(logits, y.unsqueeze(1))
-        preds = (torch.sigmoid(logits) >= 0.5).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
+        loss = self.criterion(logits, y.unsqueeze(1) * (1.0 - self.hparams.smoothing) + 0.5 * self.hparams.smoothing)
+        preds = (torch.sigmoid(logits) >= self.hparams.threshold).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
         return loss, preds, y
 
     def training_step(
@@ -188,9 +194,18 @@ class CMALitModule(LightningModule):
         self.test_loss(loss.item())
         self.test_auc(preds.detach(), targets.detach())
         self.test_auprc(preds.detach().squeeze(), targets.detach().squeeze().to(torch.int))
+        self.test_bal_acc(preds.detach().squeeze().to(torch.int), targets.detach())
+        self.test_acc(preds.squeeze().detach(), targets.detach())
+        self.test_mcc(preds.squeeze().detach(), targets.detach())
+        self.test_f1(preds.squeeze().detach(), targets.detach())
+
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/bal_acc", self.test_bal_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/mcc", self.test_mcc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/f1", self.test_f1, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
