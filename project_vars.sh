@@ -11,7 +11,7 @@ export VERSION=0.0
 export JOB_TAG="-dev" # meaninful name for THIS job
 export REPO_HOST="open.docker.sarnoff.com"
 export DUSER=${USER}
-export WANDB_API_KEY="00205bfc23fbecd8cd22f684188d4d9303f75d61"
+export WANDB_API_KEY="your_key"
 ################################################
 # running docker locally variables
 ################################################
