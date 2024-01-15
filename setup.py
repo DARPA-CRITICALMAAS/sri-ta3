@@ -25,7 +25,7 @@ setup(
     # There are some restrictions on what makes a valid project name
     # specification here:
     # https://packaging.python.org/specifications/core-metadata/#name
-    name="sri-maper",  # Required
+    name="sri_maper",  # Required
     # Versions should comply with PEP 440:
     # https://www.python.org/dev/peps/pep-0440/
     #
@@ -89,7 +89,7 @@ setup(
     # `src/`, it is necessary to specify the `package_dir` argument.
     # package_dir={"": "src"},  # Optional
     package_data={
-        "sri-maper.data": ["*.npy","*.ckpt"],
+        "sri_maper.ckpts": ["*.ckpt"],
     },
     # Alternatively, to distribute a single Python file, use
     # the `py_modules` argument instead as follows, which will expect a file
@@ -127,6 +127,7 @@ setup(
         "glob2",
         "numpy",
         "captum",
+        "jupyterlab",
     ],
 
     # List additional groups of dependencies here (e.g. development

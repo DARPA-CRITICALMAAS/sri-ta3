@@ -19,16 +19,16 @@ RUN conda install -c conda-forge "gdal>=3.0.2, <4.0.0"
 RUN python3 -m pip install --upgrade pip wheel
 COPY setup.py /workspace/
 COPY README.md /workspace/
-COPY sri-maper /workspace/sri-maper
+COPY sri_maper /workspace/sri_maper
 RUN python3 -m pip install -e .
 
 # Install .autoenv for automatic conda env activation and tab completion
-# RUN echo "autoenv() { [[ -f \"\$PWD/.autoenv\" ]] && source .autoenv ; } ; cd() { builtin cd \"\$@\" ; autoenv ; } ; autoenv" >> ~/.bashrc
+RUN echo "autoenv() { [[ -f \"\$PWD/.autoenv\" ]] && source .autoenv ; } ; cd() { builtin cd \"\$@\" ; autoenv ; } ; autoenv" >> ~/.bashrc
 
 # Add local files
 RUN mkdir /workspace/data
 RUN mkdir /workspace/logs
 
-# Run jupyter lab in the background by default
+# Run jupyterlab in the background by default
 EXPOSE 8888
 CMD ["jupyter", "lab", "--allow-root", "--NotebookApp.token=''"]

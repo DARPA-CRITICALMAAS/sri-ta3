@@ -7,7 +7,7 @@ source project_vars.sh
 export REPO="${NAMESPACE}"
 
 # runs the container locally with access to GPU and proper volume mounts
-docker run --rm -it --gpus all \
+docker run --rm -it --gpus all -p 8888:8888 \
     --name=cmaas-ta3-local-${DUSER} \
     -v /dev/shm:/dev/shm \
     -v ${DATA_PATH}:/workspace/data \
