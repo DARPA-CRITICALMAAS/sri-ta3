@@ -5,6 +5,7 @@ from torch import set_float32_matmul_precision
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import Logger
 
+from sri_maper.src.models.temperature_scaling import ModelWithTemperature
 from sri_maper.src import utils
 
 log = utils.get_pylogger(__name__)
@@ -46,6 +47,13 @@ def test(cfg: DictConfig) -> Tuple[dict, dict]:
     if logger:
         log.info("Logging hyperparameters!")
         utils.log_hyperparameters(object_dict)
+
+    # temperature scaling
+    model_calibrator = ModelWithTemperature(model)
+    cfg.data.batch_size
+    opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches)
+    del model_calibrator
+    model.set_temperature(opt_temp)
 
     log.info("Starting testing!")
     trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)

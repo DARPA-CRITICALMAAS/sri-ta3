@@ -6,6 +6,7 @@ from torch import set_float32_matmul_precision
 from pytorch_lightning import Callback, LightningDataModule, LightningModule, Trainer, seed_everything
 from pytorch_lightning.loggers import Logger
 
+from sri_maper.src.models.temperature_scaling import ModelWithTemperature
 from sri_maper.src import utils
 
 log = utils.get_pylogger(__name__)
@@ -70,6 +71,12 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
 
     train_metrics = trainer.callback_metrics
+
+    # temperature scaling
+    model_calibrator = ModelWithTemperature(model)
+    opt_temp = model_calibrator.calibrate(datamodule.val_dataloader())
+    del model_calibrator
+    model.set_temperature(opt_temp)
 
     if cfg.get("test") and not cfg.get("tune"):
         log.info("Testing best model from training!")

@@ -53,6 +53,7 @@ class CMALitModule(LightningModule):
         mc_samples: int,
         smoothing: float,
         threshold: float = 0.5,
+        temperature: float = 1.0,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -103,6 +104,7 @@ class CMALitModule(LightningModule):
 
         :return: A tensor of logits.
         """
+        # return self.net(x) / self.hparams.temperature
         return self.net(x)
 
     def on_train_start(self) -> None:
@@ -284,6 +286,9 @@ class CMALitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+    
+    def set_temperature(self, temperature: float) -> None:
+        self.hparams.temperature = temperature
 
 
 if __name__ == "__main__":
