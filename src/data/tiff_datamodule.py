@@ -63,8 +63,6 @@ class TIFFDataModule(LightningDataModule):
         patch_size: int = 33,
         predict_bounds: Optional[List[str]] = None,
         uscan_only: bool = False,
-        test_set: int = 2,
-        val_set: int = 3
     ) -> None:
         """Initialize a `TIFFDataModule`.
 
@@ -109,7 +107,7 @@ class TIFFDataModule(LightningDataModule):
                     uscan_only=self.hparams.uscan_only,
                 )
                 log.debug(f"Splitting base dataset into train / val / test.")
-                self.data_train, self.data_val, self.data_test = spatial_cross_val_split(self.data_train, k=6, test_set=self.hparams.test_set, val_set=self.hparams.val_set)
+                self.data_train, self.data_val, self.data_test = spatial_cross_val_split(self.data_train, k=6, test_set=2, val_set=4) # probably want to expose
                 log.info(f"Spatial cross val ouput: train pos - {self.data_train.valid_patches[:,2].sum()}, train neg - {len(self.data_train)-self.data_train.valid_patches[:,2].sum()}.")
                 log.info(f"Spatial cross val ouput: val pos - {self.data_val.valid_patches[:,2].sum()}, val neg - {len(self.data_val)-self.data_val.valid_patches[:,2].sum()}.")
                 log.info(f"Spatial cross val ouput: test pos - {self.data_test.valid_patches[:,2].sum()}, test neg - {len(self.data_test)-self.data_test.valid_patches[:,2].sum()}.")
