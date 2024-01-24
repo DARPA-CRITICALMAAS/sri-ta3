@@ -9,49 +9,85 @@
 </div>
 
 ## Installation
-This repo is optimized for running on a Kubernetes (k8s) GPU cluster; however, it can be run through docker on the local workstation as well. Please **follow the instrcutions exactly, carefully** so install is smooth. Once you are familiar with the structure, you can make changes.
-#### Prepare the directory structure on the datalake
-First we'll need to prepare some folders on the datalake to contain your code and logs. Under the `criticalmaas-ta3` folder within the `vt-open` datalake, make the following directory structure for YOUR use using your employee ID number (i.e. eXXXXX). NOTE, you only need to make the folders with the comment `CREATE` in it, the others should exist already. **Be careful not to corrupt the folders of other users or namespaces.**
+This repo is compatible with running locally, on docker locally, or on docker in a Kubernetes cluster. Please **follow the corresponding instrcutions exactly, carefully** so install is smooth. Once you are familiar with the structure, you can make changes.
+
+#### Local install and run
+This setup presents the easiest installation but is more brittle than using docker containers. Please make a virtual environment of your choosing, source the environment, clone the repo, and install the code using `setup.py`. Below are example commands to do so.
+```bash
+# creates and activates virtual environment
+conda create -n [VIRTUAL_ENV_NAME] python=3.10
+conda activate [VIRTUAL_ENV_NAME]
+# clone repo source code locally
+git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
+cd sri-ta3
+# installs from source code
+python3 -m pip install -e .
+```
+*If installation succeeded without errors,* you should be able to run the code locally. An [example notebook file](./sri_maper/notebooks/predict_with_pretrained.ipynb) is provided to show how to load a pretrained model checkpoint for inference. You can view/run that notebook file or see advanced uses for training, etc. in later README sections.
+
+#### Install with docker container that is run locally
+This setup is slightly more involved but provides more robustness across physical devices by using docker. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. First, edit the `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY` variables [project_vars.sh](project_vars.sh) to your use case. After editing [project_vars.sh](project_vars.sh), please clone the repo, and build the docker image. Below are example commands to do so using the conenivence scripts.
+```bash
+# clone repo source code locally
+git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
+cd sri-ta3
+# builds docker image (installing source in image) and pushes to docker repo
+bash docker/run_docker_build_push.sh
+```
+Optionally, if you would like to override the default `logs` and `data` folders within this repo that are empty to use exisitng ones (e.g. on datalake) that might contain existing logs and data, simply mount (or overwite) the corresponding folders on the datalake to the empty `logs` and `data` folders within this repo. Below are examles commands to do so.
+```bash
+sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/logs ./logs
+sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/data ./data
+```
+*If installation succeeded without errors,* you should be able to start the docker container and run the code within it. An [example notebook file](./sri_maper/notebooks/predict_with_pretrained.ipynb) is provided to show how to load a pretrained model checkpoint for inference. You can view/run that notebook file within the docker container. Below are example commands to do so using the conenivence scripts. See advanced uses for training, etc. in later README sections.
+```bash
+# starts the docker container
+bash docker/run_docker_local.sh
+##### EXECUTED WITHIN THE DOCKER CONTIAINER #####
+# begins jupyter notebook
+jupyter lab --ip 0.0.0.0 --allow-root --NotebookApp.token='' --no-browser
+# now you can access the notebook files by browsing to http://localhost:8888/lab
+```
+
+#### Install with docker container that is run on the SRI International Kubernetes cluster
+This setup is slightly more involved but provides more scalability to use more compute by using docker and Kubernetes. First we'll need to prepare some folders on the datalake to contain your data, code, and logs. Under the `criticalmaas-ta3` folder (namespace) within the `vt-open` datalake, make the following directory structure for YOUR use using your employee ID number (i.e. eXXXXX). NOTE, you only need to make the folders with the comment `CREATE` in it, the others should exist already. **Be careful not to corrupt the folders of other users or namespaces.**
 ```
 vt-open
 ├── ... # other folders for other namespaces - avoid
 ├── criticalmaas-ta3 # top-level of criticalmaas-ta3 namespace
-│   ├── data # contains all criticalmaas-ta3 data - k8s can ONLY read
-│   └── k8s # contains criticalmaas-ta3 code & logs for ALL users - k8s can read AND write
+│   ├── data # contains all criticalmaas-ta3 data - (k8s READ ONLY)
+│   └── k8s # contains criticalmaas-ta3 code & logs for ALL users - (k8s READ & WRITE)
 │       ├── eXXXXX # folder you should CREATE to contain your code & logs
-│       │   ├── eXXXXX # folder you should CREATE to contain your code
-│       │   └── eXXXXX # folder you should CREATE to contain your logs
+│       │   ├── code # folder you should CREATE to contain your code
+│       │   └── logs # folder you should CREATE to contain your logs
 │       └── ... # other folders for other users - avoid
 └── ... # other folders for other namespaces - avoid
 ```
-#### Prepare the repo with compatibility to run on k8s or locally
-Run the follow in a directory on `vtsun-02` where you want have the project.
+Next you will need to mount the `code` folder above locally. By mounting the `code` folder on the datalake locally, your local edits to source code will be reflected in the datalake, and therefore, on the Kubernetes cluster.
 ```bash
-# first we'll make the folders to contain the code, logs, and data that k8s can access
+# makes a local code folder
 mkdir k8s-code
-mkdir k8s-logs
-mkdir k8s-data
-# next, we'll mount the datalake folders that hosts the code, logs, and data - which k8s will have access to
-sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) //datalake-pr-smb.sri.com/vt-open/criticalmaas-ta3/k8s/${USER}/code ./k8s-code
-sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) //datalake-pr-smb.sri.com/vt-open/criticalmaas-ta3/k8s/${USER}/logs ./k8s-logs
-sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) //datalake-pr-smb.sri.com/vt-open/criticalmaas-ta3/data ./k8s-data
-# next we'll grab the code from the gitlab repo and place into the newly generated code folder
-cd ./k8s-code
-git clone https://gitlab.sri.com/criticalmaas-ta3/modeling.git
-cd ..
+# mount the datalake folder that hosts the code (Kubernetes will have access)
+sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/vt-open/criticalmaas-ta3/k8s/${USER}/code ./k8s-code
 ```
-#### Build and run the docker container (on k8s or locally)
-First, edit the `project_vars.sh` file to meet your needs. You can set it up to either use artifactory as a repository or a personal docker repo. With the `project_vars.sh` properly setup, the following can be run.
+Last, we'll install the repo. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. Edit the `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY` variables [project_vars.sh](project_vars.sh) to your use case. After editing [project_vars.sh](project_vars.sh), please clone the repo, and build the docker image. Below are example commands to do so using the conenivence scripts.
 ```bash
-# builds the docker image and pushes to the repo
-cd ./k8s-code
-bash docker_build_push.sh
-# starts a docker container on k8s
-bash run_k8s.sh
-# starts a docker container locally
-bash run_local.sh
+# clone repo source code locally
+git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
+cd sri-ta3
+# builds docker image (installing source in image) and pushes to docker repo
+bash docker/run_docker_build_push.sh
 ```
-## How to run
+*If installation succeeded without errors,* you should be able to start the docker container and run the code within it. An [example notebook file](./sri_maper/notebooks/predict_with_pretrained.ipynb) is provided to show how to load a pretrained model checkpoint for inference. You can view/run that notebook file within the docker container. Below are example commands to do so using the conenivence scripts. See advanced uses for training, etc. in later README sections.
+```bash
+# starts the docker container
+bash docker/run_docker_k8s.sh
+# now you can access the notebook files by browsing to http://localhost:8888/lab
+# note, you'll want to forward the Kubernetes container port 8888
+```
+
+
+## Advanced Use: Training and Testing
 
 Train model with default configuration
 

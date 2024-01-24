@@ -1,0 +1,29 @@
+_target_: sri_maper.src.models.cma_module.CMALitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: sri_maper.src.models.cnn3d_net.CNN3DNet
+  w: 33
+  h: 33
+  d: 12
+  num_input_channels: 1
+  num_output_classes: 1
+
+# compile model for faster training with pytorch 2.0
+compile: false
+
+gain: 400.0
+
+mc_samples: 100
