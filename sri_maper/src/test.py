@@ -72,7 +72,7 @@ def test(cfg: DictConfig) -> Tuple[dict, dict]:
     else:
         model.set_threshold(cfg.model.threshold)
 
-    log.info("Starting testing!")
+    log.info("Testing!")
     trainer.test(model=model, datamodule=datamodule)
 
     test_metrics = trainer.callback_metrics
