@@ -138,7 +138,7 @@ class TIFFDataModule(LightningDataModule):
             shuffle=True,
         )
 
-    def val_dataloader(self) -> DataLoader[Any]:
+    def val_dataloader(self, shuffle: bool = False) -> DataLoader[Any]:
         """Create and return the validation dataloader.
 
         :return: The validation dataloader.
@@ -148,7 +148,7 @@ class TIFFDataModule(LightningDataModule):
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
-            shuffle=False,
+            shuffle=shuffle,
         )
 
     def test_dataloader(self) -> DataLoader[Any]:

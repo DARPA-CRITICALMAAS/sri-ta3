@@ -47,8 +47,21 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
         log.info("Logging hyperparameters!")
         utils.log_hyperparameters(object_dict)
 
+    # preparation
+    model = model.__class__.load_from_checkpoint(cfg.ckpt_path)
+
+    if "temperature" not in cfg.model:
+        datamodule.setup("validate")
+        model_calibrator = utils.BinaryTemperatureScaling(model)
+        opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches)
+        del model_calibrator
+        log.info(f"Optimal temperature: {opt_temp:.3f}")
+        model.set_temperature(opt_temp)
+    else:
+        model.set_temperature(cfg.model.temperature)
+
     log.info("Starting map build!")
-    trainer.predict(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    trainer.predict(model=model, datamodule=datamodule)
 
     log.info("Outputing a map tiff!")
     tif_file_path = f"{cfg.paths.output_dir}"

@@ -4,8 +4,8 @@ from omegaconf import DictConfig
 from torch import set_float32_matmul_precision
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import Logger
+from sklearn.metrics import f1_score
 
-from sri_maper.src.models.temperature_scaling import ModelWithTemperature
 from sri_maper.src import utils
 
 log = utils.get_pylogger(__name__)
@@ -48,15 +48,32 @@ def test(cfg: DictConfig) -> Tuple[dict, dict]:
         log.info("Logging hyperparameters!")
         utils.log_hyperparameters(object_dict)
 
+    # preparation
+    datamodule.setup("validate")
+    model = model.__class__.load_from_checkpoint(cfg.ckpt_path)
+
     # temperature scaling
-    model_calibrator = ModelWithTemperature(model)
-    cfg.data.batch_size
-    opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches)
-    del model_calibrator
-    model.set_temperature(opt_temp)
+    if "temperature" not in cfg.model:
+        model_calibrator = utils.BinaryTemperatureScaling(model)
+        opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches)
+        del model_calibrator
+        log.info(f"Optimal temperature: {opt_temp:.3f}")
+        model.set_temperature(opt_temp)
+    else:
+        model.set_temperature(cfg.model.temperature)
+
+    # theshold selection
+    if "threshold" not in cfg.model:
+        threshold_selector = utils.ThresholdMoving(model)
+        opt_thr = threshold_selector.search_threshold(f1_score, datamodule, cfg.trainer.limit_val_batches)
+        del threshold_selector
+        log.info(f"Optimal threshold: {opt_thr:.3f}")
+        model.set_threshold(opt_thr)
+    else:
+        model.set_threshold(cfg.model.threshold)
 
     log.info("Starting testing!")
-    trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    trainer.test(model=model, datamodule=datamodule)
 
     test_metrics = trainer.callback_metrics
 

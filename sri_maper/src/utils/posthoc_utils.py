@@ -1,39 +1,33 @@
 import torch
-from torch.utils.data import DataLoader
 from torch import nn, optim
-from torch.nn import functional as F
 from itertools import islice
+import numpy as np
 
+from sri_maper.src.models.cma_module import CMALitModule
 from sri_maper.src import utils
 log = utils.get_pylogger(__name__)
 
 
-class ModelWithTemperature(nn.Module):
+class BinaryTemperatureScaling(nn.Module):
     """
-    A thin decorator, which wraps a model with temperature scaling
+    A class that calculates the optimal temperature scaling for a
     model (nn.Module):
         A classification neural network
         NB: Output of the neural network should be the classification logits,
             NOT the softmax (or log softmax)!
     """
     def __init__(self, model):
-        super(ModelWithTemperature, self).__init__()
+        super(BinaryTemperatureScaling, self).__init__()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(device)
-        # self.temperature = nn.Parameter(torch.ones(1) * 1.5).to(dtype=torch.float, device=self.model.device)
-        self.temperature = torch.tensor([[1.5]], dtype=torch.float, device=self.model.device, requires_grad=True)
-
-    def forward(self, inputs):
-        logits = self.model(inputs)
-        return self.temperature_scale(logits)
+        self.temperature = torch.tensor(1.5, dtype=torch.float, device=self.model.device, requires_grad=True)
 
     def temperature_scale(self, logits):
         """
         Perform temperature scaling on logits
         """
         # Expand temperature to match the size of logits
-        temperature = self.temperature.unsqueeze(1).expand(logits.size(0), logits.size(1))
-        return logits / temperature
+        return logits / self.temperature
 
     # This function probably should live outside of this class, but whatever
     def calibrate(self, datamodule, val_fraction):
@@ -45,14 +39,7 @@ class ModelWithTemperature(nn.Module):
         nll_criterion = nn.BCEWithLogitsLoss().to(self.model.device)
         ece_criterion = _ECELoss().to(self.model.device)
 
-        datamodule.setup("validate")
-        val_loader = DataLoader(
-            dataset=datamodule.data_val,
-            batch_size=datamodule.hparams.batch_size,
-            num_workers=datamodule.hparams.num_workers,
-            pin_memory=datamodule.hparams.pin_memory,
-            shuffle=True,
-        )
+        val_loader = datamodule.val_dataloader(shuffle=True)
         batch_limit = int(len(val_loader)*val_fraction)
 
         # First: collect all the logits and labels for the validation set
@@ -72,9 +59,6 @@ class ModelWithTemperature(nn.Module):
         before_temperature_ece = ece_criterion(logits, labels).item()
         log.info('Before temperature - NLL: %.3f, ECE: %.3f' % (before_temperature_nll, before_temperature_ece))
 
-        import pdb
-        pdb.set_trace()
-
         # Next: optimize the temperature w.r.t. NLL
         optimizer = optim.LBFGS([self.temperature], lr=0.01, max_iter=50)
 
@@ -88,7 +72,6 @@ class ModelWithTemperature(nn.Module):
         # Calculate NLL and ECE after temperature scaling
         after_temperature_nll = nll_criterion(self.temperature_scale(logits), labels).item()
         after_temperature_ece = ece_criterion(self.temperature_scale(logits), labels).item()
-        log.info('Optimal temperature: %.3f' % self.temperature.item())
         log.info('After temperature - NLL: %.3f, ECE: %.3f' % (after_temperature_nll, after_temperature_ece))
 
         return self.temperature.item()
@@ -138,3 +121,50 @@ class _ECELoss(nn.Module):
                 ece += torch.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
 
         return ece
+
+
+class ThresholdMoving(nn.Module):
+    """
+        A class to search for the best classification threshold of the model 
+        (using the validation set) w.r.t. a provided metric.
+    
+    """
+    def __init__(self, model):
+        super(ThresholdMoving, self).__init__()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model.to(device)
+
+    def search_threshold(self, max_metric, datamodule, val_fraction):
+        val_loader = datamodule.val_dataloader(shuffle=True)
+        batch_limit = int(len(val_loader)*val_fraction)
+
+        # collects all the logits and labels for the validation set
+        logits = []
+        labels = []
+        with torch.no_grad():
+            for inputs, label in islice(val_loader, batch_limit):
+                inputs = inputs.to(dtype=torch.float32, device=self.model.device)
+                logit = torch.sigmoid(self.model.calibrated_forward(inputs))
+                logits.append(logit.detach().cpu().numpy())
+                labels.append(label.detach().cpu().numpy())
+            logits = np.concatenate(logits, axis=None)
+            labels = np.concatenate(labels, axis=None)
+    
+        # search thresholds for imbalanced classification
+        thresholds = np.arange(0, 1, 0.001)
+        # evaluate each threshold
+        scores = [max_metric(labels, self.to_labels(logits, t)) for t in thresholds]
+        
+        # get best threshold
+        ix = np.argmax(scores)
+        log.info(f"Threshold={thresholds[ix]:.3f}, Validation F-Score={scores[ix]:.5f}")
+
+        return thresholds[ix]
+
+    @staticmethod
+    def to_labels(pos_probs, threshold):
+        return (pos_probs >= threshold).astype('int')
+
+        
+
+        

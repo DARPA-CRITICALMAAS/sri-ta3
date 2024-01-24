@@ -77,16 +77,16 @@ class CMALitModule(LightningModule):
         self.val_auc = BinaryAUROC(thresholds=None)
         self.test_auc = BinaryAUROC(thresholds=None)
 
-        # metric objects for calculating and averaging area under 
+        # metric objects for calculating and averaging area under
         # the precision-recall curve (AUPRC) across batches
         self.val_auprc = BinaryAveragePrecision(thresholds=None)
         self.test_auprc = BinaryAveragePrecision(thresholds=None)
 
         # additional metrics
         self.test_bal_acc = MulticlassAccuracy(num_classes=2, average="macro")
-        self.test_acc = BinaryAccuracy(threshold=0.5)
-        self.test_mcc = BinaryMatthewsCorrCoef(threshold=0.5)
-        self.test_f1 = BinaryF1Score(threshold=0.5)
+        self.test_acc = BinaryAccuracy(threshold=self.hparams.threshold)
+        self.test_mcc = BinaryMatthewsCorrCoef(threshold=self.hparams.threshold)
+        self.test_f1 = BinaryF1Score(threshold=self.hparams.threshold)
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -104,8 +104,16 @@ class CMALitModule(LightningModule):
 
         :return: A tensor of logits.
         """
-        # return self.net(x) / self.hparams.temperature
         return self.net(x)
+    
+    def calibrated_forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform a calibrated forward pass through the model `self.net`.
+
+        :param x: The input tensor for forward pass (i.e. window from the datacube).
+
+        :return: A tensor of calibrated logits.
+        """
+        return self.net(x) / torch.tensor(self.hparams.temperature).to(x)
 
     def on_train_start(self) -> None:
         """Lightning hook that is called when training begins."""
@@ -116,12 +124,13 @@ class CMALitModule(LightningModule):
         self.val_auc_best.reset()
 
     def model_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor]
+        self, batch: Tuple[torch.Tensor, torch.Tensor], calibrated: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a single model step on a batch of data.
 
         :param batch: A batch of data (a tuple) containing (in order) the input tensor, target
             labels.
+        :param calibrated: A flag to indicate whether to use a calibrated forward pass.
 
         :return: A tuple containing (in order):
             - A tensor of losses.
@@ -129,10 +138,14 @@ class CMALitModule(LightningModule):
             - A tensor of target labels.
         """
         x, y = batch
-        logits = self.forward(x)
+        if calibrated:
+            logits = self.calibrated_forward(x)
+        else:
+            logits = self.forward(x)
         loss = self.criterion(logits, y.unsqueeze(1) * (1.0 - self.hparams.smoothing) + 0.5 * self.hparams.smoothing)
-        preds = (torch.sigmoid(logits) >= self.hparams.threshold).int().to(torch.half).detach() #.bfloat16() #torch.argmax(logits, dim=1)
-        return loss, preds, y
+        # preds = (torch.sigmoid(logits) >= self.hparams.threshold).int().to(torch.half).detach()
+        preds = torch.sigmoid(logits)
+        return loss, preds.detach(), y.detach()
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -168,8 +181,8 @@ class CMALitModule(LightningModule):
 
         # update and log metrics
         self.val_loss(loss.item())
-        self.val_auc(preds.detach(), targets.detach())
-        self.val_auprc(preds.detach().squeeze(), targets.detach().squeeze().to(torch.int))
+        self.val_auc(preds, targets)
+        self.val_auprc(preds.squeeze(), targets.squeeze().to(torch.int))
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
@@ -192,16 +205,16 @@ class CMALitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, preds, targets = self.model_step(batch, calibrated=True)
 
         # update and log metrics
         self.test_loss(loss.item())
-        self.test_auc(preds.detach(), targets.detach())
-        self.test_auprc(preds.detach().squeeze(), targets.detach().squeeze().to(torch.int))
-        self.test_bal_acc(preds.detach().squeeze().to(torch.int), targets.detach())
-        self.test_acc(preds.squeeze().detach(), targets.detach())
-        self.test_mcc(preds.squeeze().detach(), targets.detach())
-        self.test_f1(preds.squeeze().detach(), targets.detach())
+        self.test_auc(preds, targets)
+        self.test_auprc(preds.squeeze(), targets.squeeze().to(torch.int))
+        self.test_bal_acc((preds.squeeze() > self.hparams.threshold).to(torch.int), targets)
+        self.test_acc(preds.squeeze(), targets)
+        self.test_mcc(preds.squeeze(), targets)
+        self.test_f1(preds.squeeze(), targets)
 
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
@@ -238,7 +251,7 @@ class CMALitModule(LightningModule):
 
         # generates MC samples
         preds = torch.sigmoid(
-            self.forward(
+            self.calibrated_forward(
                 batch[0].tile((self.hparams.mc_samples,1,1,1))
             ).reshape(self.hparams.mc_samples,-1)
         ).detach()
@@ -289,6 +302,9 @@ class CMALitModule(LightningModule):
     
     def set_temperature(self, temperature: float) -> None:
         self.hparams.temperature = temperature
+
+    def set_threshold(self, threshold: float) -> None:
+        self.hparams.threshold = threshold
 
 
 if __name__ == "__main__":
