@@ -143,7 +143,6 @@ class CMALitModule(LightningModule):
         else:
             logits = self.forward(x)
         loss = self.criterion(logits, y.unsqueeze(1) * (1.0 - self.hparams.smoothing) + 0.5 * self.hparams.smoothing)
-        # preds = (torch.sigmoid(logits) >= self.hparams.threshold).int().to(torch.half).detach()
         preds = torch.sigmoid(logits)
         return loss, preds.detach(), y.detach()
 
@@ -305,6 +304,9 @@ class CMALitModule(LightningModule):
 
     def set_threshold(self, threshold: float) -> None:
         self.hparams.threshold = threshold
+        self.test_acc = BinaryAccuracy(threshold=self.hparams.threshold)
+        self.test_mcc = BinaryMatthewsCorrCoef(threshold=self.hparams.threshold)
+        self.test_f1 = BinaryF1Score(threshold=self.hparams.threshold)
 
 
 if __name__ == "__main__":
