@@ -164,7 +164,3 @@ class ThresholdMoving(nn.Module):
     @staticmethod
     def to_labels(pos_probs, threshold):
         return (pos_probs >= threshold).astype('int')
-
-        
-
-        

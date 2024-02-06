@@ -143,7 +143,6 @@ class CMALitModule(LightningModule):
         else:
             logits = self.forward(x)
         loss = self.criterion(logits, y.unsqueeze(1) * (1.0 - self.hparams.smoothing) + 0.5 * self.hparams.smoothing)
-        # preds = (torch.sigmoid(logits) >= self.hparams.threshold).int().to(torch.half).detach()
         preds = torch.sigmoid(logits)
         return loss, preds.detach(), y.detach()
 
@@ -263,7 +262,14 @@ class CMALitModule(LightningModule):
         return torch.concat((torch.stack((batch[2], batch[3], means, stds), dim=-1), attribution), dim=-1)
         
     def on_predict_epoch_end(self, results):
-        self.trainer.results = torch.vstack(results[0]).cpu().numpy()
+        if self.trainer.strategy._accelerator.auto_device_count() > 1:
+            # gathers results from alL GPUs
+            results = self.all_gather(results)
+            num_dims = results[0][0].shape[-1]
+            results = torch.concat([x.reshape((-1,num_dims)).cpu() for x in results[0]]).numpy()
+        else:
+            results = torch.vstack(results[0]).cpu().numpy()
+        self.trainer.results = results
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
@@ -305,6 +311,9 @@ class CMALitModule(LightningModule):
 
     def set_threshold(self, threshold: float) -> None:
         self.hparams.threshold = threshold
+        self.test_acc = BinaryAccuracy(threshold=self.hparams.threshold)
+        self.test_mcc = BinaryMatthewsCorrCoef(threshold=self.hparams.threshold)
+        self.test_f1 = BinaryF1Score(threshold=self.hparams.threshold)
 
 
 if __name__ == "__main__":

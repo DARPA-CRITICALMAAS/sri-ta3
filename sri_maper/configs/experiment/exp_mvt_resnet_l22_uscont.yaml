@@ -1,0 +1,57 @@
+# @package _global_
+
+defaults:
+  - override /data: l22_mvt_tiff.yaml
+  - override /model: resnet.yaml
+  - override /trainer: gpu
+  - override /callbacks: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["mvt", "resnet"]
+task_name: "cmta3-train-all-l22"
+
+seed: 1234
+
+data:
+  batch_size: 1024
+  tif_dir: ${paths.data_dir}/H2/MVT
+  # left, bottom, right, top bounds in raster's metric
+  # below example for eastern continguous US
+  predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
+  # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # north america
+model:
+  # /workspace/logs/cmta3-train-all-l22/runs/2024-01-30_02-26-19
+  optimizer:
+    lr: 0.00037698725175480376
+    weight_decay: 0
+  net:
+    _target_: sri_maper.src.models.resnet.ResNet
+    num_input_channels: 77
+    num_output_classes: 1
+    dropout_rate: 0.6
+  compile: false
+  gain: 581.0
+  mc_samples: 100
+  smoothing: 0.0003
+  threshold: 0.98
+  temperature: 1.422
+
+trainer:
+  min_epochs: 5
+  max_epochs: 100
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
+  val_check_interval: 0.5
+
+logger:
+  wandb:
+    name: "exp_mvt_resnet_l22_uscan"
+
+callbacks:
+  model_checkpoint:
+    monitor: val/auprc
+  early_stopping:
+    monitor: val/auprc_best
