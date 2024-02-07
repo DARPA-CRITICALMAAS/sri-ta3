@@ -22,7 +22,7 @@ data:
   predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
   # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # north america
 
-ckpt_path: logs/cmta3-l22-all-uscan-classifier-vit/runs/2024-02-01_08-50-15/checkpoints/epoch_015_000000.ckpt
+ckpt_path: logs/cmta3-classifier-maevit/runs/2024-02-01_08-50-15/checkpoints/epoch_015_000000.ckpt
 
 model:
   optimizer:
@@ -52,7 +52,9 @@ model:
   mc_samples: 100
   gain: 1000
   smoothing: 0.0
-  
+  # threshold: ?
+  temperature: 1.503
+
 trainer:
   max_epochs: 30
   min_epochs: 20
