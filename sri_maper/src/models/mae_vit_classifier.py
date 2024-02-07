@@ -41,8 +41,13 @@ class CLSClassifer(torch.nn.Module):
         features = self.ff(features[:,0,:])
 
         return features
+    
+    def activate_dropout(self):
+        self.ff[0].train()
 
-##############################################################################################################################
+###########################################################
+#        !! TODO: ALL BELOW ARE DEPRECATED !!
+###########################################################
 
 class PatchClassifier(torch.nn.Module):
     def __init__(self, 
