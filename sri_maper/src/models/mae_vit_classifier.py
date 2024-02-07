@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
 
@@ -17,20 +19,24 @@ class CLSClassifer(torch.nn.Module):
         backbone_ckpt: str = None, 
         backbone_net: torch.nn.Module = None,
         freeze_backbone: bool = True,
+        dropout_rate: Optional[float] = 0.5,
     ) -> None:
     
         super().__init__()
         # encoder
-        self.backbone = SSCMALitModule.load_from_checkpoint(backbone_ckpt, net=backbone_net).net
-        self.backbone.encoder.patch_drop = DummyPatchDropLayer() # prevents input masking
+        self.backbone = SSCMALitModule.load_from_checkpoint(backbone_ckpt, net=backbone_net).net.encoder if backbone_ckpt is not None else backbone_net.encoder
+        self.backbone.patch_drop = DummyPatchDropLayer() # prevents input masking
         # optionally freezes backbone
         self.backbone.requires_grad_(not freeze_backbone)
         # classifier
-        self.ff = torch.nn.Linear(self.backbone.enc_dim, 1)
+        self.ff = torch.nn.Sequential(
+            torch.nn.Dropout(p=dropout_rate),
+            torch.nn.Linear(backbone_net.enc_dim, 1)
+        )
     
     def forward(self, img):
         # extracts features
-        features, _, _ = self.backbone.encoder(img)
+        features, _, _ = self.backbone(img)
         # classfies the CLS token features
         features = self.ff(features[:,0,:])
 

@@ -1,0 +1,73 @@
+# @package _global_
+
+defaults:
+  - override /data: l22_mvt_tiff.yaml
+  - override /model: maevit_classifier.yaml
+  - override /trainer: gpu
+  - override /callbacks: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["ni", "cUS", "mae-vit-classifier-cls"]
+task_name: "cmta3-classifier-maevit"
+
+seed: 1234
+
+data:
+  batch_size: 1024
+  tif_dir: ${paths.data_dir}/H2/Ni
+  # left, bottom, right, top bounds in raster's metric
+  # below example for eastern continguous US
+  predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
+  # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # north america
+
+
+
+model:
+  optimizer:
+    _target_: torch.optim.AdamW
+    lr: 0.0001
+    weight_decay: 0.01
+
+  net:
+    _target_: sri_maper.src.models.mae_vit_classifier.CLSClassifer
+    backbone_ckpt: "logs/cmta3-pretrain-maevit/runs/2024-01-31_09-01-19/checkpoints/epoch_023_000000.ckpt"
+    backbone_net:
+      _target_: sri_maper.src.models.mae_vit.MAE_ViT
+      image_size: 33
+      patch_size: 3
+      input_dim: 77
+      enc_dim: 256
+      encoder_layer: 6
+      encoder_head: 8
+      dec_dim: 128
+      output_dim: 77
+      decoder_layer: 2
+      decoder_head: 4
+      mask_ratio: 0.75
+    freeze_backbone: false
+    dropout_rate: 0.5
+  compile: false
+  mc_samples: 100
+  gain: 1500
+  smoothing: 1e-5
+  
+trainer:
+  max_epochs: 30
+  min_epochs: 1
+  limit_train_batches: 1.0
+  limit_val_batches: 0.5
+  limit_test_batches: 1.0
+  val_check_interval: 0.5
+  gradient_clip_val: 1.0
+
+logger:
+  wandb:
+    name: "ni_maevit_classifier_l22_uscont"
+
+callbacks:
+  model_checkpoint:
+    monitor: val/auprc
+  early_stopping:
+    monitor: val/auprc_best
