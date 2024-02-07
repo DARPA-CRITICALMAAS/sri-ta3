@@ -243,7 +243,7 @@ class CMALitModule(LightningModule):
         """
         # extracts feature attributions
         ig = IntegratedGradients(self.net)
-        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2))
+        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2)).detach()
 
         # enables Monte Carlo Dropout
         self.net.activate_dropout()
@@ -262,14 +262,14 @@ class CMALitModule(LightningModule):
         return torch.concat((torch.stack((batch[2], batch[3], means, stds), dim=-1), attribution), dim=-1)
         
     def on_predict_epoch_end(self, results):
-        if self.trainer.strategy._accelerator.auto_device_count() > 1:
+        results = torch.concat(results[0])
+        if self.trainer.strategy.world_size > 1:
             # gathers results from alL GPUs
-            results = self.all_gather(results)
-            num_dims = results[0][0].shape[-1]
-            results = torch.concat([x.reshape((-1,num_dims)).cpu() for x in results[0]]).numpy()
-        else:
-            results = torch.vstack(results[0]).cpu().numpy()
-        self.trainer.results = results
+            num_dims = results.shape[-1]
+            results = self.all_gather(results).reshape((-1,num_dims))
+        
+        if self.trainer.strategy.global_rank == 0:
+            self.trainer.results = results.cpu().numpy()
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
