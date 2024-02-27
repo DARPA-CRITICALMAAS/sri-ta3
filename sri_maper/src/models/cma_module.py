@@ -72,7 +72,8 @@ class CMALitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
+        # self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
+        self.criterion = torch.nn.BCEWithLogitsLoss()
 
         # metric objects for calculating and averaging AUC across batches
         self.val_auc = BinaryAUROC(thresholds=None)
@@ -244,10 +245,11 @@ class CMALitModule(LightningModule):
         """
         # extracts feature attributions
         ig = IntegratedGradients(self.net)
-        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2)).detach()
+        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=12).mean(dim=(-1,-2)).detach()
 
         # enables Monte Carlo Dropout
-        self.net.activate_dropout()
+        if self.hparams.mc_samples > 1:
+            self.net.activate_dropout()
 
         # generates MC samples
         preds = torch.sigmoid(

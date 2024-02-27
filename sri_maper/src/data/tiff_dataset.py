@@ -12,6 +12,7 @@ from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
 from torch import tensor, half
+from imblearn.over_sampling import RandomOverSampler, SMOTE
 
 from sri_maper.src import utils
 
@@ -218,6 +219,44 @@ def spatial_cross_val_split(
         uscan_only=ds.uscan_only,
     )
     return ds, val_ds, test_ds
+
+
+def balance_data(
+        ds: Dataset,
+        multiplier: int = 20,
+        downsample: bool = False,
+        oversample: bool = False,
+):
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    if downsample:
+        # randomly downsample negatives
+        ds_df_p = ds_df[ds_df["label"] == 1]
+        ds_df_n = ds_df[ds_df["label"] == 0]
+        num_negatives = int (ds_df_p.shape[0]) * multiplier
+        ds_df_n = ds_df_n.sample(n=num_negatives, replace=False)
+        ds_df = pd.concat([ds_df_n, ds_df_p], axis=0).reset_index(drop=True)
+    
+    if oversample:
+        # oversample positives
+        sampler = RandomOverSampler(sampling_strategy=0.5, shrinkage=None)
+        ds_df, y = sampler.fit_resample(ds_df.drop(columns="label"), ds_df["label"])
+        ds_df.insert(2, "label", y)
+
+    ds = TiffDataset(
+        tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size, 
+        stage=ds.stage,
+        valid_patches=ds_df.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    return ds
 
 
 def filter_by_bounds(ds, bounds):

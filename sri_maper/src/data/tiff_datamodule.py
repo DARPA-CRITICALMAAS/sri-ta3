@@ -3,7 +3,7 @@ from typing import Any, Optional, List
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 
-from sri_maper.src.data.tiff_dataset import TiffDataset, spatial_cross_val_split, filter_by_bounds
+from sri_maper.src.data.tiff_dataset import TiffDataset, spatial_cross_val_split, filter_by_bounds, balance_data
 from sri_maper.src import utils
 
 log = utils.get_pylogger(__name__)
@@ -63,6 +63,10 @@ class TIFFDataModule(LightningDataModule):
         patch_size: int = 33,
         predict_bounds: Optional[List[str]] = None,
         uscan_only: bool = False,
+        samples_per_bin: int = 20,
+        multiplier: int = 20,
+        downsample: bool = False,
+        oversample: bool = False
     ) -> None:
         """Initialize a `TIFFDataModule`.
 
@@ -90,7 +94,6 @@ class TIFFDataModule(LightningDataModule):
         self.data_test: Optional[Dataset] = None
         self.data_predict: Optional[Dataset] = None
 
-
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
 
@@ -107,7 +110,7 @@ class TIFFDataModule(LightningDataModule):
                     uscan_only=self.hparams.uscan_only,
                 )
                 log.debug(f"Splitting base dataset into train / val / test.")
-                self.data_train, self.data_val, self.data_test = spatial_cross_val_split(self.data_train, k=6, test_set=2, val_set=4) # probably want to expose
+                self.data_train, self.data_val, self.data_test = spatial_cross_val_split(self.data_train, k=6, test_set=2, val_set=4, samples_per_bin=self.hparams.samples_per_bin) # probably want to expose
                 log.info(f"Spatial cross val ouput: train pos - {self.data_train.valid_patches[:,2].sum()}, train neg - {len(self.data_train)-self.data_train.valid_patches[:,2].sum()}.")
                 log.info(f"Spatial cross val ouput: val pos - {self.data_val.valid_patches[:,2].sum()}, val neg - {len(self.data_val)-self.data_val.valid_patches[:,2].sum()}.")
                 log.info(f"Spatial cross val ouput: test pos - {self.data_test.valid_patches[:,2].sum()}, test neg - {len(self.data_test)-self.data_test.valid_patches[:,2].sum()}.")
@@ -115,7 +118,7 @@ class TIFFDataModule(LightningDataModule):
             # loads datasets to produce a prediction map
             if not self.data_predict:
                 self.data_predict = TiffDataset(
-                    tif_dir=self.hparams.tif_dir, 
+                    tif_dir=self.hparams.tif_dir,
                     patch_size=self.hparams.patch_size,
                     stage=stage,
                     uscan_only=self.hparams.uscan_only,
@@ -130,8 +133,14 @@ class TIFFDataModule(LightningDataModule):
 
         :return: The train dataloader.
         """
+        balanced_data = balance_data(
+            self.data_train, 
+            self.hparams.multiplier,
+            self.hparams.downsample,
+            self.hparams.oversample
+        )
         return DataLoader(
-            dataset=self.data_train,
+            dataset=balanced_data,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
@@ -143,8 +152,13 @@ class TIFFDataModule(LightningDataModule):
 
         :return: The validation dataloader.
         """
+        balanced_data = balance_data(
+            self.data_val, 
+            self.hparams.multiplier,
+            self.hparams.downsample,
+        )
         return DataLoader(
-            dataset=self.data_val,
+            dataset=balanced_data,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
@@ -156,8 +170,13 @@ class TIFFDataModule(LightningDataModule):
 
         :return: The test dataloader.
         """
+        balanced_data = balance_data(
+            self.data_test, 
+            self.hparams.multiplier,
+            self.hparams.downsample,
+        )
         return DataLoader(
-            dataset=self.data_test,
+            dataset=balanced_data,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
