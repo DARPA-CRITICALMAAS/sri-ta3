@@ -114,7 +114,7 @@ class SSCMALitModule(LightningModule):
     ) -> torch.Tensor:
         
         # calculates L2 loss
-        loss = torch.pow((pred - img)*mask, 2).mean()
+        loss = torch.pow(pred - img, 2).mean()
         
         return loss
 

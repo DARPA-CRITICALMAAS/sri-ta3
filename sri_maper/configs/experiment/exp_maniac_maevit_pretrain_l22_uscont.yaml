@@ -16,7 +16,7 @@ seed: 1234
 
 data:
   batch_size: 1024
-  tif_dir: ${paths.data_dir}/H2/MVT
+  tif_dir: ${paths.data_dir}/H2/Ni_Deposits_Corrected
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
   predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
@@ -32,12 +32,12 @@ model:
     _target_: sri_maper.src.models.mae_vit.MAE_ViT
     image_size: 33
     patch_size: 3
-    input_dim: 77
+    input_dim: 14
     enc_dim: 256
     encoder_layer: 6
     encoder_head: 8
     dec_dim: 128
-    output_dim: 77
+    output_dim: 14
     decoder_layer: 2
     decoder_head: 4
     mask_ratio: 0.75

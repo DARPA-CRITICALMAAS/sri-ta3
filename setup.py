@@ -129,7 +129,7 @@ setup(
         "captum",
         "jupyterlab",
         "scikit-learn",
-        "imblearn",
+        "imbalanced-learn",
     ],
 
     # List additional groups of dependencies here (e.g. development

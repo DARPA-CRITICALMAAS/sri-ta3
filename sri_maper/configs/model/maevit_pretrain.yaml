@@ -1,4 +1,4 @@
-_target_: sri_maper.src.models.cma_module_pretrain_mae.CMALitModule
+_target_: sri_maper.src.models.cma_module_pretrain_mae.SSCMALitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -6,10 +6,12 @@ optimizer:
   lr: 1e-4
   weight_decay: 1e-2
 
-scheduler:
-  _target_: torch.optim.lr_scheduler.LambdaLR
-  _partial_: true
-  last_epoch: -1
+scheduler:                                                                                                                        
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau                                                                            
+  _partial_: true                                                                                                                 
+  mode: min                                                                                                                       
+  factor: 0.1                                                                                                                     
+  patience: 10
 
 net:
   _target_: sri_maper.src.models.mae_vit.MAE_ViT

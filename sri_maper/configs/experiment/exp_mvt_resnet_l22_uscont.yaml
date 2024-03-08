@@ -19,8 +19,9 @@ data:
   tif_dir: ${paths.data_dir}/H2/MVT
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
-  predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
+  # predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
   # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # north america
+  predict_bounds: [-99.55, 33.19, -95.95, 35.75]
 model:
   # /workspace/logs/cmta3-train-all-l22/runs/2024-01-30_02-26-19
   optimizer:
@@ -35,8 +36,8 @@ model:
   gain: 581.0
   mc_samples: 100
   smoothing: 0.0003
-  threshold: 0.98
-  temperature: 1.422
+  # threshold: 0.98
+  # temperature: 1.422
 
 trainer:
   min_epochs: 5

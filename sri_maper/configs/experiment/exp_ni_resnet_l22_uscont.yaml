@@ -35,8 +35,8 @@ model:
   gain: 1000.0
   mc_samples: 100
   smoothing: 0.0003
-  # threshold: 0.98
-  # temperature: 1.422
+  # threshold: 0.944
+  # temperature: 1.404
 
 trainer:
   min_epochs: 5

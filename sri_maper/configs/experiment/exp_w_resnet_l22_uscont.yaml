@@ -35,7 +35,7 @@ model:
   gain: 581.0
   mc_samples: 100
   smoothing: 0.0003
-  # threshold: 0.98
+  threshold: 0.958
   temperature: 1.410
 
 trainer:

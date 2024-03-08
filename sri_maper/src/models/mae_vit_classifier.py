@@ -31,7 +31,7 @@ class CLSClassifer(torch.nn.Module):
         # classifier
         self.ff = torch.nn.Sequential(
             torch.nn.Dropout(p=dropout_rate),
-            torch.nn.Linear(backbone_net.enc_dim, 1)
+            torch.nn.Linear(backbone_net.enc_dim, 1, bias=False)
         )
     
     def forward(self, img):

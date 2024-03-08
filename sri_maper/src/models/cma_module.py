@@ -72,8 +72,7 @@ class CMALitModule(LightningModule):
         self.net = net
 
         # loss function
-        # self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
-        self.criterion = torch.nn.BCEWithLogitsLoss()
+        self.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(self.hparams.gain))
 
         # metric objects for calculating and averaging AUC across batches
         self.val_auc = BinaryAUROC(thresholds=None)

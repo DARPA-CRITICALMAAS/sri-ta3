@@ -28,22 +28,24 @@ data:
   multiplier: 20
   downsample: True
   oversample: True
+  log_path: "${paths.output_dir}"
 
 model:
   optimizer:
-    lr: 0.0001
-    weight_decay: 0
+    _target_: torch.optim.AdamW
+    lr: 1e-3
+    weight_decay: 1e-2
   net:
     _target_: sri_maper.src.models.resnet.ResNet
     num_input_channels: 14
     num_output_classes: 1
     dropout_rate: 0.5
   compile: false
-  gain: 13177.0
+  gain: 1.0
   mc_samples: 100
-  smoothing: 0
-  threshold: 0.984
-  temperature: 1.431
+  smoothing: 0.2
+  # threshold: 0.455
+  # temperature: 1.308
 
 trainer:
   min_epochs: 1
