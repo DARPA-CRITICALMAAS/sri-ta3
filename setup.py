@@ -128,7 +128,8 @@ setup(
         "numpy",
         "captum",
         "jupyterlab",
-        "scikit-learn"
+        "scikit-learn",
+        "imbalanced-learn",
     ],
 
     # List additional groups of dependencies here (e.g. development

@@ -2,8 +2,10 @@ from typing import List, Optional, Tuple
 import hydra
 from omegaconf import DictConfig
 from torch import set_float32_matmul_precision
+from torch.distributed import get_rank
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import Logger
+import pandas as pd
 
 from sri_maper.src import utils
 
@@ -62,10 +64,18 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
 
     log.info("Starting map build!")
     trainer.predict(model=model, datamodule=datamodule)
-
-    log.info("Outputing a map tiff!")
-    tif_file_path = f"{cfg.paths.output_dir}"
-    utils.write_tif(trainer.results, cfg.data.predict_bounds, tif_file_path)
+    
+    log.info(f"GPU:{trainer.strategy.global_rank} finished!")
+    if trainer.strategy.global_rank == 0:
+        log.info(f"GPU:{trainer.strategy.global_rank} is outputting map GeoTiff!")
+        # read all GPU CSVs
+        res_df = []
+        for n in range(trainer.strategy.world_size):
+            res_df.append(pd.read_csv(f"gpu_{n}_result.csv", index_col=False))
+        res_df = pd.concat(res_df, ignore_index=True)
+        
+        tif_file_path = f"{cfg.paths.output_dir}"
+        utils.write_tif(res_df.values, cfg.data.predict_bounds, tif_file_path)
 
     test_metrics = trainer.callback_metrics
 

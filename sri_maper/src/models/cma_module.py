@@ -5,6 +5,7 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision, MulticlassAccuracy, BinaryAccuracy, BinaryMatthewsCorrCoef, BinaryF1Score
 from captum.attr import IntegratedGradients
+import pandas as pd
 
 from sri_maper.src import utils
 log = utils.get_pylogger(__name__)
@@ -243,10 +244,11 @@ class CMALitModule(LightningModule):
         """
         # extracts feature attributions
         ig = IntegratedGradients(self.net)
-        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2))
+        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=12).mean(dim=(-1,-2)).detach()
 
         # enables Monte Carlo Dropout
-        self.net.activate_dropout()
+        if self.hparams.mc_samples > 1:
+            self.net.activate_dropout()
 
         # generates MC samples
         preds = torch.sigmoid(
@@ -262,7 +264,18 @@ class CMALitModule(LightningModule):
         return torch.concat((torch.stack((batch[2], batch[3], means, stds), dim=-1), attribution), dim=-1)
         
     def on_predict_epoch_end(self, results):
-        self.trainer.results = torch.vstack(results[0]).cpu().numpy()
+        results = torch.concat(results[0]).cpu().numpy()
+        cols = ["lon","lat","mean","std"] + [f"attr{n}" for n in range(results.shape[-1]-4)]
+        res_df = pd.DataFrame(data=results, columns=cols)
+        res_df.to_csv(f"gpu_{self.trainer.strategy.global_rank}_result.csv",index=False)
+        self.trainer.strategy.barrier()
+
+        # TODO DEBUG following
+        # if self.trainer.strategy.world_size > 1:
+            # num_dims = results.shape[-1]
+            # results = self.all_gather(results).reshape((-1,num_dims))
+        # if self.trainer.strategy.global_rank == 0:
+            # self.trainer.results = results.cpu().numpy()
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

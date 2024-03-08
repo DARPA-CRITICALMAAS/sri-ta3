@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Union, List, Callable
 from math import ceil
 from glob import glob
 from pathlib import Path
@@ -12,6 +12,9 @@ from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
 from torch import tensor, half
+from imblearn.over_sampling import RandomOverSampler
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KDTree
 
 from sri_maper.src import utils
 
@@ -220,6 +223,228 @@ def spatial_cross_val_split(
     return ds, val_ds, test_ds
 
 
+def combine(ds1, ds2):
+    ds1_df = pd.DataFrame(
+        data=ds1.valid_patches,
+        index=np.arange(ds1.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    ds2_df = pd.DataFrame(
+        data=ds2.valid_patches,
+        index=np.arange(ds2.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    ds_df = pd.concat([ds1_df, ds2_df], axis=0).reset_index(drop=True)
+
+    ds = TiffDataset(
+        tif_files=ds1.tif_files,
+        tif_data=ds1.tif_data,
+        patch_size=ds1.patch_size,
+        stage=ds1.stage,
+        valid_patches=ds_df.values,
+        uscan_only=ds1.uscan_only,
+    )
+    return ds
+
+def random_split(
+    ds: Dataset,
+    train_split: float = 0.8,
+    seed: int = 0,
+):
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    ds_df_train, ds_df_temp = train_test_split(ds_df, test_size=1.0-train_split, random_state=seed)
+    ds_df_valid, ds_df_test = train_test_split(ds_df_temp, test_size=0.5, random_state=seed)
+
+    ds_train = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_train.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    ds_valid = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_valid.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    ds_test = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_test.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    return ds_train, ds_valid, ds_test
+
+
+def random_proportionate_split(
+    ds: Dataset,
+    train_split: float = 0.8,
+    seed: int = 0,
+):
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    # make positive / negative datasets
+    ds_df_p = ds_df[ds_df["label"] == 1]
+    ds_p = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_p.values,
+        uscan_only=ds.uscan_only,
+    )
+    ds_df_n = ds_df[ds_df["label"] == 0]
+    ds_n = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_n.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    ds_p_train, ds_p_valid, ds_p_test = random_split(ds_p, train_split, seed=seed)
+    ds_n_train, ds_n_valid, ds_n_test = random_split(ds_n, train_split, seed=seed)
+
+    ds_train = combine(ds_p_train, ds_n_train)
+    ds_valid = combine(ds_p_valid, ds_n_valid)
+    ds_test = combine(ds_p_test, ds_n_test)
+
+    return ds_train, ds_valid, ds_test
+
+
+def pu_downsample(
+    ds: Dataset,
+    feature_extractor: Callable,
+    multiplier: int = 20,
+    percent_likely_neg: float = 0.25,
+    seed: int = 0,
+):
+    log.info("Using Likely Negative Downsampling!")
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+    # extract positive features
+    ds_df_p = ds_df[ds_df["label"] == 1]
+    ds_df_p = ds_df_p.reset_index(drop=True)
+    ds_p = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_p.values,
+        uscan_only=ds.uscan_only,
+    )
+    p_feats = []
+    for p_idx in range(len(ds_p)):
+        p_patch, _ = ds_p[p_idx]
+        p_feats.append(feature_extractor(p_patch))
+    # prepares unlabeled dataset
+    ds_df_u = ds_df[ds_df["label"] == 0]
+    ds_df_u = ds_df_u.reset_index(drop=True)
+    ds_u = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_u.values,
+        uscan_only=ds.uscan_only,
+    )
+    u_feats = []
+    for u_idx in range(len(ds_u)):
+        u_patch, _ = ds_u[u_idx]
+        u_feats.append(feature_extractor(u_patch))
+    # compute the distances between all positives and negatives
+    np_samples = np.asarray(p_feats + u_feats)
+    tree = KDTree(np_samples)
+    pu_dist = np.zeros(shape=(np_samples.shape[0],))
+    dists, inds = tree.query(p_feats, k=np_samples.shape[0])
+    # measure the distance from each unlabaled to each positive sample
+    for p_idx in range(len(p_feats)):
+        pu_dist[inds[p_idx]] += dists[p_idx]
+    u_dist = pu_dist[len(p_feats):]
+    # rank unlabeled by negativity likelihood, taking % most negative
+    u_dist_sort_idx = np.argsort(u_dist)
+    
+    likely_negatives_idx = u_dist_sort_idx[-int(len(u_dist_sort_idx)*percent_likely_neg):]
+    ds_df_n = ds_df_u.iloc[likely_negatives_idx]
+    # randomly downsample "likely" negatives
+    num_negatives = int (ds_df_p.shape[0]) * multiplier
+    ds_df_n = ds_df_n.sample(n=num_negatives, replace=False, random_state=seed)
+    # combine positives / negatives 
+    ds_df = pd.concat([ds_df_n, ds_df_p], axis=0).reset_index(drop=True)
+    ds = TiffDataset(
+        tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size, 
+        stage=ds.stage,
+        valid_patches=ds_df.values,
+        uscan_only=ds.uscan_only,
+    )
+    return ds
+
+
+def balance_data(
+    ds: Dataset,
+    multiplier: int = 20,
+    downsample: bool = False,
+    oversample: bool = False,
+    seed: int = 0,
+):
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    if downsample:
+        # randomly downsample negatives
+        ds_df_p = ds_df[ds_df["label"] == 1]
+        ds_df_n = ds_df[ds_df["label"] == 0]
+        num_negatives = int (ds_df_p.shape[0]) * multiplier
+        ds_df_n = ds_df_n.sample(n=num_negatives, replace=False, random_state=seed)
+        ds_df = pd.concat([ds_df_n, ds_df_p], axis=0).reset_index(drop=True)
+    
+    if oversample:
+        # oversample positives
+        sampler = RandomOverSampler(sampling_strategy="minority", shrinkage=None, random_state=seed)
+        ds_df, y = sampler.fit_resample(ds_df.drop(columns="label"), ds_df["label"])
+        ds_df.insert(2, "label", y)
+
+    ds = TiffDataset(
+        tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
+        patch_size=ds.patch_size, 
+        stage=ds.stage,
+        valid_patches=ds_df.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    return ds
+
+
 def filter_by_bounds(ds, bounds):
     ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] > bounds[0]] # left
     ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] > bounds[1]] # bottom
@@ -227,6 +452,17 @@ def filter_by_bounds(ds, bounds):
     ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] < bounds[3]] # top
     return ds
 
+
+def store_samples(ds, root_path, name):
+    log_str = f"Spatial cross val ouput: train pos - {ds.valid_patches[:,2].sum()}, train neg - {len(ds)-ds.valid_patches[:,2].sum()}."
+    log.info(log_str)
+    file_path = f"{root_path}/{name}.csv"
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+    ds_df.to_csv(file_path, index=False)
 
 if __name__ == "__main__":
     dataset = TiffDataset("/workspace/data/SRI-DATACUBE")

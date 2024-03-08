@@ -9,47 +9,55 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mvt", "resnet"]
+tags: ["ni_deposits_corr", "resnet"]
 task_name: "cmta3-train-all-l22"
 
 seed: 1234
 
 data:
   batch_size: 1024
-  tif_dir: ${paths.data_dir}/LAWLEY22-DATACUBE-ALL
+  tif_dir: ${paths.data_dir}/H2/Ni_Deposits_Corrected/
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
-  # predict_bounds: [-106.61, 24.28, -59.36, 49.86] # eastern US
+  # predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
   # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # entire north america
-  predict_bounds: [-96.765, 34.723, -87.557, 39.802] # MVT prospective area
+  predict_bounds: [-2341378, -1760422, 2233339, 1421990] # conterminous US
+  # splitting
+  samples_per_bin: 2
+  # balancing
+  multiplier: 20
+  downsample: True
+  oversample: True
+  log_path: "${paths.output_dir}"
 
 model:
   optimizer:
-    lr: 0.00037698725175480376
-    weight_decay: 0
+    _target_: torch.optim.AdamW
+    lr: 1e-3
+    weight_decay: 1e-2
   net:
     _target_: sri_maper.src.models.resnet.ResNet
-    num_input_channels: 73
+    num_input_channels: 14
     num_output_classes: 1
-    dropout_rate: 0.6
+    dropout_rate: 0.5
   compile: false
-  gain: 581.0
+  gain: 1.0
   mc_samples: 100
-  smoothing: 0.0001
-  # threshold: 0.5
-  # temperature: 1.420
+  smoothing: 0.2
+  # threshold: 0.455
+  # temperature: 1.308
 
 trainer:
-  min_epochs: 5
+  min_epochs: 1
   max_epochs: 100
-  limit_train_batches: 0.1
-  limit_val_batches: 0.1
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
   limit_test_batches: 1.0
   val_check_interval: 0.5
 
 logger:
   wandb:
-    name: "l22_all_resnet_uscanaus_tune"
+    name: "exp_ni_deposits_corr_resnet_l22_uscan"
 
 callbacks:
   model_checkpoint:
