@@ -55,6 +55,7 @@ class CMALitModule(LightningModule):
         smoothing: float,
         threshold: float = 0.5,
         temperature: float = 1.0,
+        extract_attributions: bool = True,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -242,9 +243,11 @@ class CMALitModule(LightningModule):
             - Prediction Uncertainty
             - Prediction Feature Attributions
         """
+
         # extracts feature attributions
-        ig = IntegratedGradients(self.net)
-        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=12).mean(dim=(-1,-2)).detach()
+        if self.hparams.extract_attributions:
+            ig = IntegratedGradients(self.net)
+            attribution = ig.attribute(batch[0].requires_grad_(), n_steps=12).mean(dim=(-1,-2)).detach()
 
         # enables Monte Carlo Dropout
         if self.hparams.mc_samples > 1:
@@ -261,7 +264,9 @@ class CMALitModule(LightningModule):
         means = preds.mean(dim=0).squeeze()
         stds = preds.std(dim=0).squeeze()
         
-        return torch.concat((torch.stack((batch[2], batch[3], means, stds), dim=-1), attribution), dim=-1)
+        results = torch.stack((batch[2], batch[3], means, stds), dim=-1)
+        if self.hparams.extract_attributions: results = torch.concat((results, attribution), dim=-1)
+        return results
         
     def on_predict_epoch_end(self, results):
         results = torch.concat(results[0]).cpu().numpy()

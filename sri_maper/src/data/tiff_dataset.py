@@ -30,6 +30,7 @@ class TiffDataset(Dataset):
         tif_dir: Union[str, None] = None,
         tif_files: Union[List[str], None] = None,
         tif_data: Union[np.ndarray, None] = None,
+        tif_tags: Union[dict, None] = None,
         valid_patches: Union[np.ndarray, None] = None,
         patch_size: int = 33,
         stage: Union[np.ndarray, None] = None,
@@ -37,7 +38,7 @@ class TiffDataset(Dataset):
     ):
         self.uscan_only = uscan_only
         # loads tif files in MP compatible format
-        self.tif_files, self.tif_data = self._load_tif_files(tif_dir, tif_files, tif_data)
+        self.tif_files, self.tif_data, self.tif_tags = self._load_tif_files(tif_dir, tif_files, tif_data, tif_tags)
 
         # loads VALID patches within all tiffs of dataset
         self.valid_patches = self._load_valid_patches(self.tif_files, patch_size) if valid_patches is None else valid_patches
@@ -46,7 +47,7 @@ class TiffDataset(Dataset):
         self.patch_size = patch_size
         self.stage = stage
 
-    def _load_tif_files(self, tif_dir, tif_files, tif_data):
+    def _load_tif_files(self, tif_dir, tif_files, tif_data, tif_tags):
         # sets List[str] of tif files
         assert (tif_files is None and tif_dir is not None) or (tif_files is not None and tif_dir is None), "tif_dir and tif_files BOTH set."
         if tif_files is None:
@@ -61,8 +62,9 @@ class TiffDataset(Dataset):
                 log.info(f"Loading tif data for for {tif_file}")
                 with rio_env(GDAL_CACHEMAX=0):
                     with rio_open(tif_file, driver='GTiff') as tif:
+                        tif_tags = tif.tags(ns="evidence_layers")
                         tif_data.append(tensor(tif.read().astype("half"), dtype=half))
-        return tif_files, tif_data
+        return tif_files, tif_data, tif_tags
 
     def _load_valid_patches(self, tif_files, patch_size):
         # loads or generates df indicating which tif patches are VALID
@@ -241,6 +243,7 @@ def combine(ds1, ds2):
     ds = TiffDataset(
         tif_files=ds1.tif_files,
         tif_data=ds1.tif_data,
+        tif_tags=ds1.tif_tags,
         patch_size=ds1.patch_size,
         stage=ds1.stage,
         valid_patches=ds_df.values,
@@ -265,6 +268,7 @@ def random_split(
     ds_train = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size,
         stage=ds.stage,
         valid_patches=ds_df_train.values,
@@ -274,6 +278,7 @@ def random_split(
     ds_valid = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size,
         stage=ds.stage,
         valid_patches=ds_df_valid.values,
@@ -283,6 +288,7 @@ def random_split(
     ds_test = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size,
         stage=ds.stage,
         valid_patches=ds_df_test.values,
@@ -308,6 +314,7 @@ def random_proportionate_split(
     ds_p = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size,
         stage=ds.stage,
         valid_patches=ds_df_p.values,
@@ -317,6 +324,7 @@ def random_proportionate_split(
     ds_n = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size,
         stage=ds.stage,
         valid_patches=ds_df_n.values,
@@ -337,7 +345,7 @@ def pu_downsample(
     ds: Dataset,
     feature_extractor: Callable,
     multiplier: int = 20,
-    percent_likely_neg: float = 0.25,
+    likely_neg_range: List[float] = [0.25,0.75],
     seed: int = 0,
 ):
     log.info("Using Likely Negative Downsampling!")
@@ -352,6 +360,7 @@ def pu_downsample(
     ds_p = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size,
         stage=ds.stage,
         valid_patches=ds_df_p.values,
@@ -367,6 +376,7 @@ def pu_downsample(
     ds_u = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size,
         stage=ds.stage,
         valid_patches=ds_df_u.values,
@@ -388,7 +398,8 @@ def pu_downsample(
     # rank unlabeled by negativity likelihood, taking % most negative
     u_dist_sort_idx = np.argsort(u_dist)
     
-    likely_negatives_idx = u_dist_sort_idx[-int(len(u_dist_sort_idx)*percent_likely_neg):]
+    # selects the range for likely negative sampling
+    likely_negatives_idx = u_dist_sort_idx[int(len(u_dist_sort_idx)*likely_neg_range[0]):int(len(u_dist_sort_idx)*likely_neg_range[1])]
     ds_df_n = ds_df_u.iloc[likely_negatives_idx]
     # randomly downsample "likely" negatives
     num_negatives = int (ds_df_p.shape[0]) * multiplier
@@ -398,6 +409,7 @@ def pu_downsample(
     ds = TiffDataset(
         tif_files=ds.tif_files, 
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size, 
         stage=ds.stage,
         valid_patches=ds_df.values,
@@ -436,6 +448,7 @@ def balance_data(
     ds = TiffDataset(
         tif_files=ds.tif_files, 
         tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
         patch_size=ds.patch_size, 
         stage=ds.stage,
         valid_patches=ds_df.values,
@@ -463,16 +476,4 @@ def store_samples(ds, root_path, name):
         columns=["x","y","label","lon", "lat","source"]
     )
     ds_df.to_csv(file_path, index=False)
-
-if __name__ == "__main__":
-    dataset = TiffDataset("/workspace/data/SRI-DATACUBE")
-    pdb.set_trace()
-    print(len(dataset))
-    print(dataset[0][0].shape)
-    print(dataset[0][1])
-    tr_ds, te_ds = spatial_cross_val_split(dataset, k=6, nbins=36)
-    print("Train")
-    print(len(tr_ds) / len(dataset))
-    print("Test")
-    print(len(te_ds) /len(dataset))
 

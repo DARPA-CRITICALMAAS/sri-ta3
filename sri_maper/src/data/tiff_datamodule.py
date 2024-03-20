@@ -70,7 +70,8 @@ class TIFFDataModule(LightningDataModule):
         downsample: bool = False,
         oversample: bool = False,
         log_path: str = "/workspace/logs/",
-        frac_likely_neg: float = 0.25,
+        likely_neg_range: List[float] = [0.25,0.75],
+        frac_train_split: float = 0.5,
         seed: int = 0,
     ) -> None:
         """Initialize a `TIFFDataModule`.
@@ -109,27 +110,27 @@ class TIFFDataModule(LightningDataModule):
             if not self.data_train or not self.data_val or not self.data_test:
                 log.debug(f"Instantiating base dataset.")
                 self.data_train = dataset_utils.TiffDataset(
-                    tif_dir=self.hparams.tif_dir, 
+                    tif_dir=self.hparams.tif_dir,
                     patch_size=self.hparams.patch_size,
                     stage=stage,
                     uscan_only=self.hparams.uscan_only,
                 )
                 # downsample to likely negatives
-                def simple_feat_extractor(X, patch_size):
-                    if type(X) is torch.Tensor:
-                        X = X.detach().cpu().numpy()
-                    return X[:, patch_size//2, patch_size//2]
-                init_feat_extractor = partial(simple_feat_extractor, patch_size=self.data_train.patch_size)
-                self.data_train = dataset_utils.pu_downsample(self.data_train, init_feat_extractor, percent_likely_neg=self.hparams.frac_likely_neg, seed=self.hparams.seed)
+                if self.hparams.downsample:
+                    def simple_feat_extractor(X, patch_size):
+                        if type(X) is torch.Tensor:
+                            X = X.detach().cpu().numpy()
+                        return X[:, patch_size//2, patch_size//2]
+                    init_feat_extractor = partial(simple_feat_extractor, patch_size=self.data_train.patch_size)
+                    self.data_train = dataset_utils.pu_downsample(self.data_train, init_feat_extractor, likely_neg_range=self.hparams.likely_neg_range, seed=self.hparams.seed)
                 log.debug(f"Splitting base dataset into train / val / test.")
                 # random split
-                self.data_train, self.data_val, self.data_test = dataset_utils.random_proportionate_split(self.data_train, train_split=0.5, seed=self.hparams.seed)
+                self.data_train, self.data_val, self.data_test = dataset_utils.random_proportionate_split(self.data_train, train_split=self.hparams.frac_train_split, seed=self.hparams.seed)
                 # oversample to balance
                 self.data_train = dataset_utils.balance_data(self.data_train, oversample=self.hparams.oversample, seed=self.hparams.seed)
                 dataset_utils.store_samples(self.data_train, self.hparams.log_path, "train")
                 dataset_utils.store_samples(self.data_val, self.hparams.log_path, "valid")
                 dataset_utils.store_samples(self.data_test, self.hparams.log_path, "test")
-                exit()
         elif stage == "predict":
             # loads datasets to produce a prediction map
             if not self.data_predict:

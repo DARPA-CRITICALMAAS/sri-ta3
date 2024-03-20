@@ -75,7 +75,7 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
         res_df = pd.concat(res_df, ignore_index=True)
         
         tif_file_path = f"{cfg.paths.output_dir}"
-        utils.write_tif(res_df.values, cfg.data.predict_bounds, tif_file_path)
+        utils.write_tif(res_df.values, cfg.data.predict_bounds, tif_file_path, cfg.extract_attributions, datamodule)
 
     test_metrics = trainer.callback_metrics
 

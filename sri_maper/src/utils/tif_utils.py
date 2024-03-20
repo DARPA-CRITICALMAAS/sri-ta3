@@ -2,7 +2,7 @@ import numpy as np
 import rasterio as rio
 
 
-def write_tif(results, bounds, path):
+def write_tif(results, bounds, path, attributions_flag, dataset):
     # defines size of output rasters
     resolution = (2240.0,2240.0)
     height = int((bounds[3]-bounds[1]) / resolution[0])
@@ -38,97 +38,16 @@ def write_tif(results, bounds, path):
         np.vstack((results[:,0], results[:,1], np.ones_like(results[:,1])))
     ).astype(int).T
     data = results[:,2:]
-
-    # filters valid idx - some error with multi GPU
-    # valid_idx = np.logical_and(result_pts[:,0]>=0,result_pts[:,0]<width)
-    # valid_idx = np.logical_and(valid_idx,result_pts[:,1]>=0)
-    # valid_idx = np.logical_and(valid_idx,result_pts[:,1]<height)
-    # data = data[valid_idx,:]
-    # result_pts = result_pts[valid_idx,:]
     
     output_rasters = [
         "Likelihoods", 
         "Uncertainties",
-        # sources
-    #     "Sedimentary_Dictionary",
-    #     "Geology_BlackShale_Proximity",
-    #     "Geology_Fault_Proximity",
-    #     "Terrane_Proximity",
-    #     "Geology_Lithology_Majority_Igneous_Extrusive",
-    #     "Geology_Lithology_Majority_Igneous_Intrusive_Felsic",
-    #     "Geology_Lithology_Majority_Igneous_Intrusive_Mafic",
-    #     "Geology_Lithology_Majority_Metamorphic_Gneiss",
-    #     "Geology_Lithology_Majority_Metamorphic_Gneiss_Paragneiss",
-    #     "Geology_Lithology_Majority_Metamorphic_Schist",
-    #     "Geology_Lithology_Majority_Other_Unconsolidated",
-    #     "Geology_Lithology_Majority_Sedimentary_Chemical",
-    #     "Geology_Lithology_Majority_Sedimentary_Siliciclastic",
-    #     "Geology_Lithology_Minority_Igneous_Extrusive",
-    #     "Geology_Lithology_Minority_Igneous_Intrusive_Felsic",
-    #     "Geology_Lithology_Minority_Igneous_Intrusive_Mafic",
-    #     "Geology_Lithology_Minority_Metamorphic_Gneiss",
-    #     "Geology_Lithology_Minority_Metamorphic_Gneiss_Paragneiss",
-    #     "Geology_Lithology_Minority_Metamorphic_Schist",
-    #     "Geology_Lithology_Minority_Other_Unconsolidated",
-    #     "Geology_Lithology_Minority_Sedimentary_Chemical",
-    #     "Geology_Lithology_Minority_Sedimentary_Siliciclastic",
-    #     "Geology_Period_Minimum_Majority_Cambrian",
-    #     "Geology_Period_Minimum_Majority_Cretaceous",
-    #     "Geology_Period_Minimum_Majority_Devonian",
-    #     "Geology_Period_Minimum_Majority_Jurassic",
-    #     "Geology_Period_Minimum_Majority_Mesoproterozoic",
-    #     "Geology_Period_Minimum_Majority_Mississippian",
-    #     "Geology_Period_Minimum_Majority_Neoarchean",
-    #     "Geology_Period_Minimum_Majority_Neogene",
-    #     "Geology_Period_Minimum_Majority_Neoproterozoic",
-    #     "Geology_Period_Minimum_Majority_Ordovician",
-    #     "Geology_Period_Minimum_Majority_Paleogene",
-    #     "Geology_Period_Minimum_Majority_Paleoproterozoic",
-    #     "Geology_Period_Minimum_Majority_Pennsylvanian",
-    #     "Geology_Period_Minimum_Majority_Permian",
-    #     "Geology_Period_Minimum_Majority_Quaternary",
-    #     "Geology_Period_Minimum_Majority_Silurian",
-    #     "Geology_Period_Minimum_Majority_Triassic",
-    #    "Gravity_Bouguer_HGM",
-    #     "Geology_Period_Maximum_Majority_Cambrian",
-    #     "Geology_Period_Maximum_Majority_Cretaceous",
-    #     "Geology_Period_Maximum_Majority_Devonian",
-    #     "Geology_Period_Maximum_Majority_Jurassic",
-    #     "Geology_Period_Maximum_Majority_Mesoproterozoic",
-    #     "Geology_Period_Maximum_Majority_Mississippian",
-    #     "Geology_Period_Maximum_Majority_Neoarchean",
-    #     "Geology_Period_Maximum_Majority_Neogene",
-    #     "Geology_Period_Maximum_Majority_Neoproterozoic",
-    #     "Geology_Period_Maximum_Majority_Ordovician",
-    #     "Geology_Period_Maximum_Majority_Paleogene",
-    #     "Geology_Period_Maximum_Majority_Paleoproterozoic",
-    #     "Geology_Period_Maximum_Majority_Pennsylvanian",
-    #     "Geology_Period_Maximum_Majority_Permian",
-    #     "Geology_Period_Maximum_Majority_Quaternary",
-    #     "Geology_Period_Maximum_Majority_Silurian",
-    #     "Geology_Period_Maximum_Majority_Triassic",
-    #     "Gravity_Bouguer",
-    #     "Gravity_Bouguer_UpCont30km_HGM",
-    #     "Geology_PassiveMargin_Proximity",
-    #     "Magnetic_HGM",
-    #     "Geology_Paleolatitude_Period_Minimum",
-    #     "Magnetic_LongWavelength_HGM",
-    #     "Gravity_Bouguer_UpCont30km_HGM_Worms_Proximity",
-    #     "Gravity_Bouguer_HGM_Worms_Proximity",
-    #     "Seismic_LAB_Priestley",
-    #     "Seismic_Moho",
-    #     "Igneous_Dictionary",
-    #     "Magnetic_LongWavelength_HGM_Worms_Proximity",
-    #     "Magnetic_HGM_Worms_Proximity",
-    #     "Metamorphic_Dictionary",
-    #     "Gravity_GOCE_ShapeIndex",
-    #     "Radiometric Potassium",
-    #     "Radiometric Thorium",
-    #     "Radiometric Uranium",
-    #     "Isostatic Gravity HGM",
-    #     "Isostatic Gravity",
     ]
-    output_rasters = output_rasters + [f"attr{i}" for i in range(results[0,4:].shape[0])]
+
+    if attributions_flag:
+        attrs = [None] * len(dataset.data_predict.tif_tags)
+        for tag, idx in dataset.data_predict.tif_tags.items(): attrs[int(idx)] = tag
+        output_rasters = output_rasters + attrs[:-1] # last tag is label - doesn't exist
 
     for idx, tif_layer in enumerate(output_rasters):
         # forms tif ndarray
@@ -140,20 +59,6 @@ def write_tif(results, bounds, path):
         tif_file = f"{path}/{tif_layer}_{str_bounds(bounds)}.tif"
         with rio.open(tif_file, "w", **tiff_meta) as out:
             out.write_band(1, tif_data)
-
-    # outputs a feature importance map, with the most important feature per pixel
-    # tif_data = np.empty(shape=(height, width))
-    # tif_data[:] = np.nan
-    # data_overall = np.argmax(data[:,2:].astype(float), axis=1)
-    # data_overall[(data_overall>=6) & (data_overall<=14)] = 20 # Geology_Lithology_Majority
-    # data_overall[(data_overall>=15) & (data_overall<=24)] = 21 # Geology_Lithology_Minority
-    # data_overall[(data_overall>=25) & (data_overall<=41)] = 22 # Geology_Period_Maximum_Majority
-    # data_overall[(data_overall>=43) & (data_overall<=59)] = 23 # Geology_Period_Minimum_Majority
-
-    # tif_data[result_pts[:,1], result_pts[:,0]] = data_overall.astype(float)
-    # tif_file = f"{path}/overall_{str_bounds(bounds)}.tif"
-    # with rio.open(tif_file, "w", **tiff_meta) as out:
-    #     out.write_band(1, tif_data)
 
 
 def str_bounds(bounds):

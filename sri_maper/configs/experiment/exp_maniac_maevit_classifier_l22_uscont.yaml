@@ -3,24 +3,23 @@
 defaults:
   - override /data: l22_mvt_tiff.yaml
   - override /model: maevit_classifier.yaml
-  - override /trainer: gpu
+  - override /trainer: ddp
   - override /callbacks: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["ni_deposits_corr", "mae-vit-classifier-cls"]
+tags: ["ni_maniac", "mae-vit-classifier-cls"]
 task_name: "cmta3-classifier-maevit"
 
 seed: 1234
+extract_attributions: True
 
 data:
-  batch_size: 1024
-  tif_dir: ${paths.data_dir}/H2/Ni_Deposits_Corrected/
+  batch_size: 32
+  tif_dir: ${paths.data_dir}/H3/MaNiAC/
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
-  # predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
-  # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # north america
   predict_bounds: [-2341378, -1760422, 2233339, 1421990] # conterminous US
   # splitting
   samples_per_bin: 2
@@ -28,21 +27,17 @@ data:
   multiplier: 20
   downsample: True
   oversample: True
+  likely_neg_range: [0.75,1.0]
+  log_path: "${paths.output_dir}"
 
 model:
   optimizer:
     _target_: torch.optim.AdamW
-    lr: 1e-5
+    lr: 1e-4
     weight_decay: 1e-3
-  scheduler:
-    _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-    _partial_: true
-    mode: max
-    factor: 0.5
-    patience: 1
   net:
     _target_: sri_maper.src.models.mae_vit_classifier.CLSClassifer
-    backbone_ckpt: "logs/cmta3-pretrain-maevit/runs/2024-02-29_14-26-28/checkpoints/auprc_0.000-v1.ckpt"
+    backbone_ckpt: "logs/cmta3-pretrain-maevit/runs/2024-03-14_16-19-36/checkpoints/ssim_0.907.ckpt"
     backbone_net:
       _target_: sri_maper.src.models.mae_vit.MAE_ViT
       image_size: 33
@@ -56,25 +51,26 @@ model:
       decoder_layer: 2
       decoder_head: 4
       mask_ratio: 0.75
-    freeze_backbone: true
+    freeze_backbone: false
     dropout_rate: 0.5
   compile: false
   mc_samples: 100
   gain: 1.0
   smoothing: 0.2
+  extract_attributions: ${extract_attributions}
   
 trainer:
-  min_epochs: 50
+  min_epochs: 1
   max_epochs: 100
   limit_train_batches: 1.0
   limit_val_batches: 1.0
   limit_test_batches: 1.0
   val_check_interval: 0.5
-  gradient_clip_val: 1.0
+  # gradient_clip_val: 1.0
 
 logger:
   wandb:
-    name: "exp_ni_deposits_corr_maevit_classifier_l22_uscont"
+    name: "exp_ni_maevit_classifier_l22_uscont"
 
 callbacks:
   model_checkpoint:
