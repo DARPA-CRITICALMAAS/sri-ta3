@@ -3,7 +3,7 @@
 defaults:
   - override /data: l22_mvt_tiff.yaml
   - override /model: resnet.yaml
-  - override /trainer: gpu
+  - override /trainer: ddp
   - override /callbacks: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -13,34 +13,43 @@ tags: ["mvt", "resnet"]
 task_name: "cmta3-train-all-l22"
 
 seed: 1234
+extract_attributions: true
 
 data:
-  batch_size: 1024
-  tif_dir: ${paths.data_dir}/H2/MVT
+  batch_size: 32
+  tif_dir: ${paths.data_dir}/H3/MVT
   # left, bottom, right, top bounds in raster's metric
   # below example for eastern continguous US
-  # predict_bounds: [-125.79, 24.14, -66.08, 50.3] # conterminous US
-  # predict_bounds: [-178.28, 24.19, -51.93, 83.61] # north america
-  predict_bounds: [-99.55, 33.19, -95.95, 35.75]
+  predict_bounds: [-2341378, -1760422, 2233339, 1421990]
+  # splitting
+  samples_per_bin: 2
+  # balancing
+  multiplier: 20
+  downsample: true
+  oversample: true
+  likely_neg_range: [0.4, 0.5]
+  log_path: "${paths.output_dir}"
+
 model:
-  # /workspace/logs/cmta3-train-all-l22/runs/2024-01-30_02-26-19
   optimizer:
-    lr: 0.00037698725175480376
-    weight_decay: 0
+    _target_: torch.optim.AdamW
+    lr: 1e-4
+    weight_decay: 1e-2
   net:
     _target_: sri_maper.src.models.resnet.ResNet
     num_input_channels: 77
     num_output_classes: 1
     dropout_rate: 0.6
   compile: false
-  gain: 581.0
+  gain: 1.0
   mc_samples: 100
-  smoothing: 0.0003
+  smoothing: 0.3
+  extract_attributions: ${extract_attributions}
   # threshold: 0.98
   # temperature: 1.422
 
 trainer:
-  min_epochs: 5
+  min_epochs: 1
   max_epochs: 100
   limit_train_batches: 1.0
   limit_val_batches: 1.0
@@ -49,7 +58,7 @@ trainer:
 
 logger:
   wandb:
-    name: "exp_mvt_resnet_l22_uscan"
+    name: "exp_mvt_resnet_l22_uscont"
 
 callbacks:
   model_checkpoint:

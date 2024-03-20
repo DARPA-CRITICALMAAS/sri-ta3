@@ -13,7 +13,7 @@ tags: ["w", "resnet"]
 task_name: "cmta3-train-all-l22"
 
 seed: 1234
-extract_attributions: True
+extract_attributions: true
 
 data:
   batch_size: 32
@@ -25,8 +25,8 @@ data:
   samples_per_bin: 2
   # balancing
   multiplier: 20
-  downsample: True
-  oversample: True
+  downsample: true
+  oversample: true
   likely_neg_range: [0.2,0.4]
   log_path: "${paths.output_dir}"
 
