@@ -24,7 +24,7 @@ class ResNet(nn.Module):
             torch.nn.AdaptiveAvgPool2d(1),
             torch.nn.Flatten(start_dim=1),
             torch.nn.Dropout(p=dropout_rate),
-            torch.nn.Linear(self.backbone.layer4[1].bn2.num_features, num_output_classes) # resnet18
+            torch.nn.Linear(self.backbone.layer4[1].bn2.num_features, num_output_classes, bias=False) # resnet18
             # torch.nn.Linear(self.backbone.layer4[0].downsample[2].num_features, num_output_classes) # resnet10t
         )
         

@@ -1,9 +1,11 @@
 from typing import Any, Optional, List
+from functools import partial
 
+import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 
-from sri_maper.src.data.tiff_dataset import TiffDataset, spatial_cross_val_split, filter_by_bounds
+import sri_maper.src.data.tiff_dataset as dataset_utils
 from sri_maper.src import utils
 
 log = utils.get_pylogger(__name__)
@@ -63,6 +65,14 @@ class TIFFDataModule(LightningDataModule):
         patch_size: int = 33,
         predict_bounds: Optional[List[str]] = None,
         uscan_only: bool = False,
+        samples_per_bin: int = 20,
+        multiplier: int = 20,
+        downsample: bool = False,
+        oversample: bool = False,
+        log_path: str = "/workspace/logs/",
+        likely_neg_range: List[float] = [0.25,0.75],
+        frac_train_split: float = 0.5,
+        seed: int = 0,
     ) -> None:
         """Initialize a `TIFFDataModule`.
 
@@ -90,7 +100,6 @@ class TIFFDataModule(LightningDataModule):
         self.data_test: Optional[Dataset] = None
         self.data_predict: Optional[Dataset] = None
 
-
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
 
@@ -100,27 +109,38 @@ class TIFFDataModule(LightningDataModule):
             # loads and splits datasets for train / val / test
             if not self.data_train or not self.data_val or not self.data_test:
                 log.debug(f"Instantiating base dataset.")
-                self.data_train = TiffDataset(
-                    tif_dir=self.hparams.tif_dir, 
+                self.data_train = dataset_utils.TiffDataset(
+                    tif_dir=self.hparams.tif_dir,
                     patch_size=self.hparams.patch_size,
                     stage=stage,
                     uscan_only=self.hparams.uscan_only,
                 )
+                # downsample to likely negatives
+                if self.hparams.downsample:
+                    def simple_feat_extractor(X, patch_size):
+                        if type(X) is torch.Tensor:
+                            X = X.detach().cpu().numpy()
+                        return X[:, patch_size//2, patch_size//2]
+                    init_feat_extractor = partial(simple_feat_extractor, patch_size=self.data_train.patch_size)
+                    self.data_train = dataset_utils.pu_downsample(self.data_train, init_feat_extractor, likely_neg_range=self.hparams.likely_neg_range, seed=self.hparams.seed)
                 log.debug(f"Splitting base dataset into train / val / test.")
-                self.data_train, self.data_val, self.data_test = spatial_cross_val_split(self.data_train, k=6, test_set=2, val_set=4) # probably want to expose
-                log.info(f"Spatial cross val ouput: train pos - {self.data_train.valid_patches[:,2].sum()}, train neg - {len(self.data_train)-self.data_train.valid_patches[:,2].sum()}.")
-                log.info(f"Spatial cross val ouput: val pos - {self.data_val.valid_patches[:,2].sum()}, val neg - {len(self.data_val)-self.data_val.valid_patches[:,2].sum()}.")
-                log.info(f"Spatial cross val ouput: test pos - {self.data_test.valid_patches[:,2].sum()}, test neg - {len(self.data_test)-self.data_test.valid_patches[:,2].sum()}.")
+                # random split
+                self.data_train, self.data_val, self.data_test = dataset_utils.random_proportionate_split(self.data_train, train_split=self.hparams.frac_train_split, seed=self.hparams.seed)
+                # oversample to balance
+                self.data_train = dataset_utils.balance_data(self.data_train, oversample=self.hparams.oversample, seed=self.hparams.seed)
+                dataset_utils.store_samples(self.data_train, self.hparams.log_path, "train")
+                dataset_utils.store_samples(self.data_val, self.hparams.log_path, "valid")
+                dataset_utils.store_samples(self.data_test, self.hparams.log_path, "test")
         elif stage == "predict":
             # loads datasets to produce a prediction map
             if not self.data_predict:
-                self.data_predict = TiffDataset(
-                    tif_dir=self.hparams.tif_dir, 
+                self.data_predict = dataset_utils.TiffDataset(
+                    tif_dir=self.hparams.tif_dir,
                     patch_size=self.hparams.patch_size,
                     stage=stage,
                     uscan_only=self.hparams.uscan_only,
                 )
-                self.data_predict = filter_by_bounds(self.data_predict, self.hparams.predict_bounds)
+                self.data_predict = dataset_utils.filter_by_bounds(self.data_predict, self.hparams.predict_bounds)
                 log.info(f"Used bounds to filter patches - number of patches {len(self.data_predict)}.")
         else:
             raise NotImplementedError

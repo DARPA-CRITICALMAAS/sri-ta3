@@ -5,6 +5,7 @@ from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision, MulticlassAccuracy, BinaryAccuracy, BinaryMatthewsCorrCoef, BinaryF1Score
 from captum.attr import IntegratedGradients
+import pandas as pd
 
 from sri_maper.src import utils
 log = utils.get_pylogger(__name__)
@@ -54,6 +55,7 @@ class CMALitModule(LightningModule):
         smoothing: float,
         threshold: float = 0.5,
         temperature: float = 1.0,
+        extract_attributions: bool = True,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -143,7 +145,6 @@ class CMALitModule(LightningModule):
         else:
             logits = self.forward(x)
         loss = self.criterion(logits, y.unsqueeze(1) * (1.0 - self.hparams.smoothing) + 0.5 * self.hparams.smoothing)
-        # preds = (torch.sigmoid(logits) >= self.hparams.threshold).int().to(torch.half).detach()
         preds = torch.sigmoid(logits)
         return loss, preds.detach(), y.detach()
 
@@ -242,12 +243,15 @@ class CMALitModule(LightningModule):
             - Prediction Uncertainty
             - Prediction Feature Attributions
         """
+
         # extracts feature attributions
-        ig = IntegratedGradients(self.net)
-        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2))
+        if self.hparams.extract_attributions:
+            ig = IntegratedGradients(self.net)
+            attribution = ig.attribute(batch[0].requires_grad_(), n_steps=12).mean(dim=(-1,-2)).detach()
 
         # enables Monte Carlo Dropout
-        self.net.activate_dropout()
+        if self.hparams.mc_samples > 1:
+            self.net.activate_dropout()
 
         # generates MC samples
         preds = torch.sigmoid(
@@ -260,10 +264,23 @@ class CMALitModule(LightningModule):
         means = preds.mean(dim=0).squeeze()
         stds = preds.std(dim=0).squeeze()
         
-        return torch.concat((torch.stack((batch[2], batch[3], means, stds), dim=-1), attribution), dim=-1)
+        results = torch.stack((batch[2], batch[3], means, stds), dim=-1)
+        if self.hparams.extract_attributions: results = torch.concat((results, attribution), dim=-1)
+        return results
         
     def on_predict_epoch_end(self, results):
-        self.trainer.results = torch.vstack(results[0]).cpu().numpy()
+        results = torch.concat(results[0]).cpu().numpy()
+        cols = ["lon","lat","mean","std"] + [f"attr{n}" for n in range(results.shape[-1]-4)]
+        res_df = pd.DataFrame(data=results, columns=cols)
+        res_df.to_csv(f"gpu_{self.trainer.strategy.global_rank}_result.csv",index=False)
+        self.trainer.strategy.barrier()
+
+        # TODO DEBUG following
+        # if self.trainer.strategy.world_size > 1:
+            # num_dims = results.shape[-1]
+            # results = self.all_gather(results).reshape((-1,num_dims))
+        # if self.trainer.strategy.global_rank == 0:
+            # self.trainer.results = results.cpu().numpy()
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
@@ -305,6 +322,9 @@ class CMALitModule(LightningModule):
 
     def set_threshold(self, threshold: float) -> None:
         self.hparams.threshold = threshold
+        self.test_acc = BinaryAccuracy(threshold=self.hparams.threshold)
+        self.test_mcc = BinaryMatthewsCorrCoef(threshold=self.hparams.threshold)
+        self.test_f1 = BinaryF1Score(threshold=self.hparams.threshold)
 
 
 if __name__ == "__main__":

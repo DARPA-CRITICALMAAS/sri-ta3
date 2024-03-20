@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Union, List, Callable
 from math import ceil
 from glob import glob
 from pathlib import Path
@@ -12,6 +12,9 @@ from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
 from torch import tensor, half
+from imblearn.over_sampling import RandomOverSampler
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KDTree
 
 from sri_maper.src import utils
 
@@ -27,6 +30,7 @@ class TiffDataset(Dataset):
         tif_dir: Union[str, None] = None,
         tif_files: Union[List[str], None] = None,
         tif_data: Union[np.ndarray, None] = None,
+        tif_tags: Union[dict, None] = None,
         valid_patches: Union[np.ndarray, None] = None,
         patch_size: int = 33,
         stage: Union[np.ndarray, None] = None,
@@ -34,7 +38,7 @@ class TiffDataset(Dataset):
     ):
         self.uscan_only = uscan_only
         # loads tif files in MP compatible format
-        self.tif_files, self.tif_data = self._load_tif_files(tif_dir, tif_files, tif_data)
+        self.tif_files, self.tif_data, self.tif_tags = self._load_tif_files(tif_dir, tif_files, tif_data, tif_tags)
 
         # loads VALID patches within all tiffs of dataset
         self.valid_patches = self._load_valid_patches(self.tif_files, patch_size) if valid_patches is None else valid_patches
@@ -43,7 +47,7 @@ class TiffDataset(Dataset):
         self.patch_size = patch_size
         self.stage = stage
 
-    def _load_tif_files(self, tif_dir, tif_files, tif_data):
+    def _load_tif_files(self, tif_dir, tif_files, tif_data, tif_tags):
         # sets List[str] of tif files
         assert (tif_files is None and tif_dir is not None) or (tif_files is not None and tif_dir is None), "tif_dir and tif_files BOTH set."
         if tif_files is None:
@@ -58,8 +62,9 @@ class TiffDataset(Dataset):
                 log.info(f"Loading tif data for for {tif_file}")
                 with rio_env(GDAL_CACHEMAX=0):
                     with rio_open(tif_file, driver='GTiff') as tif:
+                        tif_tags = tif.tags(ns="evidence_layers")
                         tif_data.append(tensor(tif.read().astype("half"), dtype=half))
-        return tif_files, tif_data
+        return tif_files, tif_data, tif_tags
 
     def _load_valid_patches(self, tif_files, patch_size):
         # loads or generates df indicating which tif patches are VALID
@@ -220,6 +225,239 @@ def spatial_cross_val_split(
     return ds, val_ds, test_ds
 
 
+def combine(ds1, ds2):
+    ds1_df = pd.DataFrame(
+        data=ds1.valid_patches,
+        index=np.arange(ds1.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    ds2_df = pd.DataFrame(
+        data=ds2.valid_patches,
+        index=np.arange(ds2.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    ds_df = pd.concat([ds1_df, ds2_df], axis=0).reset_index(drop=True)
+
+    ds = TiffDataset(
+        tif_files=ds1.tif_files,
+        tif_data=ds1.tif_data,
+        tif_tags=ds1.tif_tags,
+        patch_size=ds1.patch_size,
+        stage=ds1.stage,
+        valid_patches=ds_df.values,
+        uscan_only=ds1.uscan_only,
+    )
+    return ds
+
+def random_split(
+    ds: Dataset,
+    train_split: float = 0.8,
+    seed: int = 0,
+):
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    ds_df_train, ds_df_temp = train_test_split(ds_df, test_size=1.0-train_split, random_state=seed)
+    ds_df_valid, ds_df_test = train_test_split(ds_df_temp, test_size=0.5, random_state=seed)
+
+    ds_train = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_train.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    ds_valid = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_valid.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    ds_test = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_test.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    return ds_train, ds_valid, ds_test
+
+
+def random_proportionate_split(
+    ds: Dataset,
+    train_split: float = 0.8,
+    seed: int = 0,
+):
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    # make positive / negative datasets
+    ds_df_p = ds_df[ds_df["label"] == 1]
+    ds_p = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_p.values,
+        uscan_only=ds.uscan_only,
+    )
+    ds_df_n = ds_df[ds_df["label"] == 0]
+    ds_n = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_n.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    ds_p_train, ds_p_valid, ds_p_test = random_split(ds_p, train_split, seed=seed)
+    ds_n_train, ds_n_valid, ds_n_test = random_split(ds_n, train_split, seed=seed)
+
+    ds_train = combine(ds_p_train, ds_n_train)
+    ds_valid = combine(ds_p_valid, ds_n_valid)
+    ds_test = combine(ds_p_test, ds_n_test)
+
+    return ds_train, ds_valid, ds_test
+
+
+def pu_downsample(
+    ds: Dataset,
+    feature_extractor: Callable,
+    multiplier: int = 20,
+    likely_neg_range: List[float] = [0.25,0.75],
+    seed: int = 0,
+):
+    log.info("Using Likely Negative Downsampling!")
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+    # extract positive features
+    ds_df_p = ds_df[ds_df["label"] == 1]
+    ds_df_p = ds_df_p.reset_index(drop=True)
+    ds_p = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_p.values,
+        uscan_only=ds.uscan_only,
+    )
+    p_feats = []
+    for p_idx in range(len(ds_p)):
+        p_patch, _ = ds_p[p_idx]
+        p_feats.append(feature_extractor(p_patch))
+    # prepares unlabeled dataset
+    ds_df_u = ds_df[ds_df["label"] == 0]
+    ds_df_u = ds_df_u.reset_index(drop=True)
+    ds_u = TiffDataset(
+        tif_files=ds.tif_files,
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size,
+        stage=ds.stage,
+        valid_patches=ds_df_u.values,
+        uscan_only=ds.uscan_only,
+    )
+    u_feats = []
+    for u_idx in range(len(ds_u)):
+        u_patch, _ = ds_u[u_idx]
+        u_feats.append(feature_extractor(u_patch))
+    # compute the distances between all positives and negatives
+    np_samples = np.asarray(p_feats + u_feats)
+    tree = KDTree(np_samples)
+    pu_dist = np.zeros(shape=(np_samples.shape[0],))
+    dists, inds = tree.query(p_feats, k=np_samples.shape[0])
+    # measure the distance from each unlabaled to each positive sample
+    for p_idx in range(len(p_feats)):
+        pu_dist[inds[p_idx]] += dists[p_idx]
+    u_dist = pu_dist[len(p_feats):]
+    # rank unlabeled by negativity likelihood, taking % most negative
+    u_dist_sort_idx = np.argsort(u_dist)
+    
+    # selects the range for likely negative sampling
+    likely_negatives_idx = u_dist_sort_idx[int(len(u_dist_sort_idx)*likely_neg_range[0]):int(len(u_dist_sort_idx)*likely_neg_range[1])]
+    ds_df_n = ds_df_u.iloc[likely_negatives_idx]
+    # randomly downsample "likely" negatives
+    num_negatives = int (ds_df_p.shape[0]) * multiplier
+    ds_df_n = ds_df_n.sample(n=num_negatives, replace=False, random_state=seed)
+    # combine positives / negatives 
+    ds_df = pd.concat([ds_df_n, ds_df_p], axis=0).reset_index(drop=True)
+    ds = TiffDataset(
+        tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size, 
+        stage=ds.stage,
+        valid_patches=ds_df.values,
+        uscan_only=ds.uscan_only,
+    )
+    return ds
+
+
+def balance_data(
+    ds: Dataset,
+    multiplier: int = 20,
+    downsample: bool = False,
+    oversample: bool = False,
+    seed: int = 0,
+):
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+
+    if downsample:
+        # randomly downsample negatives
+        ds_df_p = ds_df[ds_df["label"] == 1]
+        ds_df_n = ds_df[ds_df["label"] == 0]
+        num_negatives = int (ds_df_p.shape[0]) * multiplier
+        ds_df_n = ds_df_n.sample(n=num_negatives, replace=False, random_state=seed)
+        ds_df = pd.concat([ds_df_n, ds_df_p], axis=0).reset_index(drop=True)
+    
+    if oversample:
+        # oversample positives
+        sampler = RandomOverSampler(sampling_strategy="minority", shrinkage=None, random_state=seed)
+        ds_df, y = sampler.fit_resample(ds_df.drop(columns="label"), ds_df["label"])
+        ds_df.insert(2, "label", y)
+
+    ds = TiffDataset(
+        tif_files=ds.tif_files, 
+        tif_data=ds.tif_data,
+        tif_tags=ds.tif_tags,
+        patch_size=ds.patch_size, 
+        stage=ds.stage,
+        valid_patches=ds_df.values,
+        uscan_only=ds.uscan_only,
+    )
+
+    return ds
+
+
 def filter_by_bounds(ds, bounds):
     ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] > bounds[0]] # left
     ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] > bounds[1]] # bottom
@@ -228,15 +466,14 @@ def filter_by_bounds(ds, bounds):
     return ds
 
 
-if __name__ == "__main__":
-    dataset = TiffDataset("/workspace/data/SRI-DATACUBE")
-    pdb.set_trace()
-    print(len(dataset))
-    print(dataset[0][0].shape)
-    print(dataset[0][1])
-    tr_ds, te_ds = spatial_cross_val_split(dataset, k=6, nbins=36)
-    print("Train")
-    print(len(tr_ds) / len(dataset))
-    print("Test")
-    print(len(te_ds) /len(dataset))
+def store_samples(ds, root_path, name):
+    log_str = f"Spatial cross val ouput: train pos - {ds.valid_patches[:,2].sum()}, train neg - {len(ds)-ds.valid_patches[:,2].sum()}."
+    log.info(log_str)
+    file_path = f"{root_path}/{name}.csv"
+    ds_df = pd.DataFrame(
+        data=ds.valid_patches,
+        index=np.arange(ds.valid_patches.shape[0]),
+        columns=["x","y","label","lon", "lat","source"]
+    )
+    ds_df.to_csv(file_path, index=False)
 

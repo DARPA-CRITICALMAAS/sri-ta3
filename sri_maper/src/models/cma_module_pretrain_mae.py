@@ -113,12 +113,8 @@ class SSCMALitModule(LightningModule):
         self, img: torch.Tensor, pred: torch.Tensor, mask: torch.Tensor
     ) -> torch.Tensor:
         
-        # calculates L1 loss
-        # loss = torch.abs(pred[mask==1] - img[mask==1]).mean()
         # calculates L2 loss
-        loss = torch.pow(pred[mask==1] - img[mask==1], 2).mean()
-        # calculates SSIM loss
-        # loss += 0.75 * (1.0 - ssim(torch.where(mask == 1, img, 0.0), torch.where(mask == 1, pred, 0.0), reduction="sum") / mask.sum())
+        loss = torch.pow(pred - img, 2).mean()
         
         return loss
 
@@ -270,8 +266,7 @@ class SSCMALitModule(LightningModule):
         """
         optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
         if self.hparams.scheduler is not None:
-            lr_func = lambda epoch: min((epoch + 1) / (self.hparams.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / self.trainer.max_epochs * math.pi) + 1))
-            scheduler = self.hparams.scheduler(optimizer=optimizer, lr_lambda=lr_func)
+            scheduler = self.hparams.scheduler(optimizer=optimizer)
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {

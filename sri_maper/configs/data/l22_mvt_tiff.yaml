@@ -5,3 +5,5 @@ num_workers: 12
 pin_memory: False
 patch_size: 33
 uscan_only: False
+likely_neg_range: [0.25,0.75]
+seed: ${seed}
