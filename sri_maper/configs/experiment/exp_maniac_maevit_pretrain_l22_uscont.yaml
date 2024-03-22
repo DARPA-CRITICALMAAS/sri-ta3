@@ -1,7 +1,6 @@
 # @package _global_
 
 defaults:
-  - override /data: l22_mvt_tiff
   - override /model: maevit_pretrain
   - override /trainer: ddp
   - override /callbacks: default
@@ -16,11 +15,9 @@ seed: 1234
 
 data:
   batch_size: 1024
-  tif_dir: ${paths.data_dir}/H3/MaNiAC/
-  # left, bottom, right, top bounds in raster's metric
-  # below example for eastern continguous US
-  predict_bounds: [-2341378, -1760422, 2233339, 1421990] # conterminous US
-  frac_train_split: 0.7
+  tif_dir: ${paths.data_dir}/H3/MaNiAC
+  downsample: false
+  oversample: false
 
 model:
   optimizer:

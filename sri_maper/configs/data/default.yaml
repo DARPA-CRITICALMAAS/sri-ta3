@@ -1,0 +1,15 @@
+_target_: sri_maper.src.data.tiff_datamodule.TIFFDataModule
+# dataset params
+tif_dir: ${paths.data_dir}/H3
+window_size: 33
+multiplier: 20
+downsample: true
+oversample: true
+likely_neg_range: [0.25,0.75]
+# training params
+batch_size: 32
+num_workers: 12
+pin_memory: False
+# experiment tracking
+seed: ${seed}
+log_path: "${paths.output_dir}"

@@ -31,46 +31,41 @@ class TiffDataset(Dataset):
         tif_files: Union[List[str], None] = None,
         tif_data: Union[np.ndarray, None] = None,
         tif_tags: Union[dict, None] = None,
+        tif_meta: Union[dict, None] = None,
         valid_patches: Union[np.ndarray, None] = None,
-        patch_size: int = 33,
+        window_size: int = 33,
         stage: Union[np.ndarray, None] = None,
-        uscan_only: bool = False,
     ):
-        self.uscan_only = uscan_only
         # loads tif files in MP compatible format
-        self.tif_files, self.tif_data, self.tif_tags = self._load_tif_files(tif_dir, tif_files, tif_data, tif_tags)
+        self.tif_files, self.tif_data, self.tif_tags, self.tif_meta = self._load_tif_files(tif_dir, tif_files, tif_data, tif_tags, tif_meta)
 
         # loads VALID patches within all tiffs of dataset
-        self.valid_patches = self._load_valid_patches(self.tif_files, patch_size) if valid_patches is None else valid_patches
+        self.valid_patches = self._load_valid_patches(self.tif_files, window_size) if valid_patches is None else valid_patches
 
         # sets remaining object variables
-        self.patch_size = patch_size
+        self.window_size = window_size
         self.stage = stage
 
-    def _load_tif_files(self, tif_dir, tif_files, tif_data, tif_tags):
+    def _load_tif_files(self, tif_dir, tif_files, tif_data, tif_tags, tif_meta):
         # sets List[str] of tif files
         assert (tif_files is None and tif_dir is not None) or (tif_files is not None and tif_dir is None), "tif_dir and tif_files BOTH set."
         if tif_files is None:
             tif_files = glob(str(Path(tif_dir) / Path("*.tif")))
-            if self.uscan_only:
-                log.info("Only using US and Canada datapoints.")
-                tif_files = [item for item in tif_files if 'north-america' in item]
-            else:
-                log.info("Using all available datapoints: US, Canada, and Australia.")
             tif_data = []
             for tif_file in tif_files:
                 log.info(f"Loading tif data for for {tif_file}")
                 with rio_env(GDAL_CACHEMAX=0):
                     with rio_open(tif_file, driver='GTiff') as tif:
                         tif_tags = tif.tags(ns="evidence_layers")
+                        tif_meta = tif.meta
                         tif_data.append(tensor(tif.read().astype("half"), dtype=half))
-        return tif_files, tif_data, tif_tags
+        return tif_files, tif_data, tif_tags, tif_meta
 
-    def _load_valid_patches(self, tif_files, patch_size):
+    def _load_valid_patches(self, tif_files, window_size):
         # loads or generates df indicating which tif patches are VALID
         ds_valid_patches = []
         for tif_idx, tif_file in  enumerate(tif_files):
-            valid_patch_file = f"{str(tif_file).split('.')[0]}_valid_p{patch_size}.npy"
+            valid_patch_file = f"{str(tif_file).split('.')[0]}_valid_p{window_size}.npy"
             try:
                 # check if valid patch dataframe already exists
                 log.info(f"Loading np.ndarray enumerating valid patches for {tif_file} (~5 min)")
@@ -78,7 +73,7 @@ class TiffDataset(Dataset):
             except FileNotFoundError:
                 # if not, generate valid patch dataframe
                 log.warning(f"np.ndarray not found. Generating.")
-                valid_patches = self._generate_valid_patches(tif_file, patch_size)
+                valid_patches = self._generate_valid_patches(tif_file, window_size)
                 np.save(valid_patch_file, valid_patches)
 
             valid_patches = np.hstack([valid_patches, tif_idx*np.ones(shape=(valid_patches.shape[0],1))])
@@ -87,7 +82,7 @@ class TiffDataset(Dataset):
         return np.vstack(ds_valid_patches)
     
     @staticmethod
-    def _generate_valid_patches(tif_file, patch_size):
+    def _generate_valid_patches(tif_file, window_size):
         with rio_open(tif_file, "r") as tif:
             tif_height = tif.height
             tif_width = tif.width
@@ -104,7 +99,7 @@ class TiffDataset(Dataset):
         chunks = [(cols[i:i+chunk_size],rows[i:i+chunk_size]) for i in range(0, len(rows), chunk_size)]
 
         # enumerates all valid patches with multiprocessing
-        validate_patches_multi = partial(validate_patches, patch_size=patch_size, tif_file=tif_file)
+        validate_patches_multi = partial(validate_patches, window_size=window_size, tif_file=tif_file)
         valid_patches = np.vstack(pool.map(validate_patches_multi, chunks))
 
         # closes the pool to free up resources
@@ -124,7 +119,7 @@ class TiffDataset(Dataset):
         source_tif = int(self.valid_patches[idx,-1])
         
         # loads the patch's data
-        patch = self.tif_data[source_tif][:-1,row:row+self.patch_size,col:col+self.patch_size]
+        patch = self.tif_data[source_tif][:-1,row:row+self.window_size,col:col+self.window_size]
         
         if self.stage == "predict":
             lon = self.valid_patches[idx,-3]
@@ -134,7 +129,7 @@ class TiffDataset(Dataset):
             return patch, label # train/val/test
 
 
-def validate_patches(chunk, patch_size, tif_file):
+def validate_patches(chunk, window_size, tif_file):
     # creates MP friendly iterator that estimates run-time
     if Process()._identity[0] == 1:
         chunk_iter = tqdm(zip(chunk[0],chunk[1]), total=len(chunk[0]))
@@ -145,9 +140,9 @@ def validate_patches(chunk, patch_size, tif_file):
     records = []
     with rio_open(tif_file) as f:
         for x, y in chunk_iter:
-            patch = f.read(window=Window(x, y, patch_size, patch_size))
-            if patch.shape != (f.count, patch_size, patch_size) or np.isnan(patch).any(): continue
-            records.append([x, y, patch[-1, patch_size//2, patch_size//2]])
+            patch = f.read(window=Window(x, y, window_size, window_size))
+            if patch.shape != (f.count, window_size, window_size) or np.isnan(patch).any(): continue
+            records.append([x, y, patch[-1, window_size//2, window_size//2]])
         tif_tfm = f.transform
     
     # creates dataframe cataloging valid patches
@@ -155,8 +150,8 @@ def validate_patches(chunk, patch_size, tif_file):
 
     # efficiently adds lat / lon to dataframe
     if records.shape[0]:
-        cols = records[:,0] + 0.5 + patch_size//2
-        rows = records[:,1] + 0.5 + patch_size//2
+        cols = records[:,0] + 0.5 + window_size//2
+        rows = records[:,1] + 0.5 + window_size//2
         pts = np.dot(np.asarray(tif_tfm.column_vectors).T, np.vstack((cols, rows, np.ones_like(rows)))).T
         records = np.hstack([records, pts])
     else:
@@ -200,16 +195,19 @@ def spatial_cross_val_split(
     test_ds = TiffDataset(
         tif_files=ds.tif_files, 
         tif_data=ds.tif_data,
-        patch_size=ds.patch_size, 
+        tif_tags=ds.tif_tags,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size, 
         stage=ds.stage,
         valid_patches=test_valid_patches,
-        uscan_only=ds.uscan_only,
     )
     val_valid_patches = ds_df[ds_df["group"] == val_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     val_ds = TiffDataset(
         tif_files=ds.tif_files, 
         tif_data=ds.tif_data,
-        patch_size=ds.patch_size, 
+        tif_tags=ds.tif_tags,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size, 
         stage=ds.stage,
         valid_patches=val_valid_patches
     )
@@ -217,10 +215,11 @@ def spatial_cross_val_split(
     ds = TiffDataset(
         tif_files=ds.tif_files, 
         tif_data=ds.tif_data,
-        patch_size=ds.patch_size, 
+        tif_tags=ds.tif_tags,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size, 
         stage=ds.stage,
         valid_patches=ds_valid_patches,
-        uscan_only=ds.uscan_only,
     )
     return ds, val_ds, test_ds
 
@@ -244,10 +243,10 @@ def combine(ds1, ds2):
         tif_files=ds1.tif_files,
         tif_data=ds1.tif_data,
         tif_tags=ds1.tif_tags,
-        patch_size=ds1.patch_size,
+        tif_meta=ds1.tif_meta,
+        window_size=ds1.window_size,
         stage=ds1.stage,
         valid_patches=ds_df.values,
-        uscan_only=ds1.uscan_only,
     )
     return ds
 
@@ -269,30 +268,30 @@ def random_split(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_train.values,
-        uscan_only=ds.uscan_only,
     )
 
     ds_valid = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_valid.values,
-        uscan_only=ds.uscan_only,
     )
 
     ds_test = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_test.values,
-        uscan_only=ds.uscan_only,
     )
 
     return ds_train, ds_valid, ds_test
@@ -315,20 +314,20 @@ def random_proportionate_split(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_p.values,
-        uscan_only=ds.uscan_only,
     )
     ds_df_n = ds_df[ds_df["label"] == 0]
     ds_n = TiffDataset(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_n.values,
-        uscan_only=ds.uscan_only,
     )
 
     ds_p_train, ds_p_valid, ds_p_test = random_split(ds_p, train_split, seed=seed)
@@ -361,10 +360,10 @@ def pu_downsample(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_p.values,
-        uscan_only=ds.uscan_only,
     )
     p_feats = []
     for p_idx in range(len(ds_p)):
@@ -377,10 +376,10 @@ def pu_downsample(
         tif_files=ds.tif_files,
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size,
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_u.values,
-        uscan_only=ds.uscan_only,
     )
     u_feats = []
     for u_idx in range(len(ds_u)):
@@ -410,10 +409,10 @@ def pu_downsample(
         tif_files=ds.tif_files, 
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size, 
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size, 
         stage=ds.stage,
         valid_patches=ds_df.values,
-        uscan_only=ds.uscan_only,
     )
     return ds
 
@@ -449,20 +448,22 @@ def balance_data(
         tif_files=ds.tif_files, 
         tif_data=ds.tif_data,
         tif_tags=ds.tif_tags,
-        patch_size=ds.patch_size, 
+        tif_meta=ds.tif_meta,
+        window_size=ds.window_size, 
         stage=ds.stage,
         valid_patches=ds_df.values,
-        uscan_only=ds.uscan_only,
     )
 
     return ds
 
 
-def filter_by_bounds(ds, bounds):
-    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] > bounds[0]] # left
-    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] > bounds[1]] # bottom
-    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] < bounds[2]] # right
-    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] < bounds[3]] # top
+def filter_by_bounds(ds):
+    left, top = ds.tif_meta["transform"] * (0, 0)
+    right, bottom = ds.tif_meta["transform"] * (ds.tif_meta["width"], ds.tif_meta["height"])
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] > left]
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] > bottom]
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,3] < right]
+    ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] < top]
     return ds
 
 

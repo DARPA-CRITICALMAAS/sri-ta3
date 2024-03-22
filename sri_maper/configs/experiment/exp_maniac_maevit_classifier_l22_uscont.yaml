@@ -1,7 +1,6 @@
 # @package _global_
 
 defaults:
-  - override /data: l22_mvt_tiff.yaml
   - override /model: maevit_classifier.yaml
   - override /trainer: ddp
   - override /callbacks: default.yaml
@@ -16,19 +15,8 @@ seed: 1234
 extract_attributions: true
 
 data:
-  batch_size: 32
-  tif_dir: ${paths.data_dir}/H3/MaNiAC/
-  # left, bottom, right, top bounds in raster's metric
-  # below example for eastern continguous US
-  predict_bounds: [-2341378, -1760422, 2233339, 1421990] # conterminous US
-  # splitting
-  samples_per_bin: 2
-  # balancing
-  multiplier: 20
-  downsample: true
-  oversample: true
+  tif_dir: ${paths.data_dir}/H3/MaNiAC
   likely_neg_range: [0.75,1.0]
-  log_path: "${paths.output_dir}"
 
 model:
   optimizer:

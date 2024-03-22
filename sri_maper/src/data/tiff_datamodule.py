@@ -62,13 +62,10 @@ class TIFFDataModule(LightningDataModule):
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
-        patch_size: int = 33,
-        predict_bounds: Optional[List[str]] = None,
-        uscan_only: bool = False,
-        samples_per_bin: int = 20,
+        window_size: int = 33,
         multiplier: int = 20,
-        downsample: bool = False,
-        oversample: bool = False,
+        downsample: bool = True,
+        oversample: bool = True,
         log_path: str = "/workspace/logs/",
         likely_neg_range: List[float] = [0.25,0.75],
         frac_train_split: float = 0.5,
@@ -81,7 +78,6 @@ class TIFFDataModule(LightningDataModule):
         :param batch_size: The batch size. Defaults to `64`.
         :param num_workers: The number of workers. Defaults to `0`.
         :param pin_memory: Whether to pin memory. Defaults to `False`.
-        :param uscan_only: Whether to use US/Canada or US/Canada/Australia data. Defaults to `False`.
         """
         super().__init__()
 
@@ -111,17 +107,16 @@ class TIFFDataModule(LightningDataModule):
                 log.debug(f"Instantiating base dataset.")
                 self.data_train = dataset_utils.TiffDataset(
                     tif_dir=self.hparams.tif_dir,
-                    patch_size=self.hparams.patch_size,
+                    window_size=self.hparams.window_size,
                     stage=stage,
-                    uscan_only=self.hparams.uscan_only,
                 )
                 # downsample to likely negatives
                 if self.hparams.downsample:
-                    def simple_feat_extractor(X, patch_size):
+                    def simple_feat_extractor(X, window_size):
                         if type(X) is torch.Tensor:
                             X = X.detach().cpu().numpy()
-                        return X[:, patch_size//2, patch_size//2]
-                    init_feat_extractor = partial(simple_feat_extractor, patch_size=self.data_train.patch_size)
+                        return X[:, window_size//2, window_size//2]
+                    init_feat_extractor = partial(simple_feat_extractor, window_size=self.data_train.window_size)
                     self.data_train = dataset_utils.pu_downsample(self.data_train, init_feat_extractor, likely_neg_range=self.hparams.likely_neg_range, seed=self.hparams.seed)
                 log.debug(f"Splitting base dataset into train / val / test.")
                 # random split
@@ -136,11 +131,10 @@ class TIFFDataModule(LightningDataModule):
             if not self.data_predict:
                 self.data_predict = dataset_utils.TiffDataset(
                     tif_dir=self.hparams.tif_dir,
-                    patch_size=self.hparams.patch_size,
+                    window_size=self.hparams.window_size,
                     stage=stage,
-                    uscan_only=self.hparams.uscan_only,
                 )
-                self.data_predict = dataset_utils.filter_by_bounds(self.data_predict, self.hparams.predict_bounds)
+                self.data_predict = dataset_utils.filter_by_bounds(self.data_predict)
                 log.info(f"Used bounds to filter patches - number of patches {len(self.data_predict)}.")
         else:
             raise NotImplementedError

@@ -10,5 +10,5 @@ from sri_maper.src.utils.utils import (
     save_file,
     task_wrapper,
 )
-from sri_maper.src.utils.tif_utils import write_tif, produce_label_geotiff
+from sri_maper.src.utils.tif_utils import write_tif
 from sri_maper.src.utils.posthoc_utils import BinaryTemperatureScaling, ThresholdMoving
