@@ -1,0 +1,36 @@
+_target_: sri_maper.src.data.preprocessing.generate_raster_stacks
+raster_stacks:
+  - raster_stack_path: ${data.tif_dir}/maniac-mini.tif
+    raster_files_path: ${paths.data_dir}/maniac_mini
+    raster_files:
+      - "Geophysics_LAB_clipped_dilated_mini.tif"
+      - "Geophysics_LAB_HGM_clipped_dilated_mini.tif"
+      - "Geophysics_LAB_HGM_Worms_clipped_dilated_mini.tif"
+      - "Geophysics_Moho_clipped_dilated_mini.tif"
+      - "Geophysics_Mag_LOGAnalyticSignal_clipped_dilated_mini.tif"
+      - "Geophysics_Mag_RTP_Long-Wavelength_HGM_Worms_clipped_dilated_mini.tif"
+      - "Geophysics_Mag_RTP_clipped_dilated_mini.tif"
+      - "Geophysics_Mag_RTP_Long-Wavelength_HGM_clipped_dilated_mini.tif"
+      - "Geophysics_MT2023_9km_clipped_dilated_mini.tif"
+      - "Geophysics_MT2023_15km_clipped_dilated_mini.tif"
+      - "Geophysics_MT2023_30km_clipped_dilated_mini.tif"
+      - "Geophysics_Gravity_Isostatic_clipped_dilated_mini.tif"
+      - "Geophysics_Gravity_Bouguer_Up30km_HGM_clipped_dilated_mini.tif"
+      - "Geophysics_Gravity_Bouguer_Up30km_HGM_Worms_clipped_dilated_mini.tif"
+      - "magmatic_nickel_sites_v1h2merged_cont_US_clipped_dilated_mini.tif"
+    raster_files_types:
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - float32
+      - bool

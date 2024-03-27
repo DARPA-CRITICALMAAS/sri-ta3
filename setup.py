@@ -128,6 +128,7 @@ setup(
         "numpy",
         "captum",
         "jupyterlab",
+        "ipywidgets",
         "scikit-learn",
         "imbalanced-learn",
     ],

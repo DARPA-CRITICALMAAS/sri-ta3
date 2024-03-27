@@ -3,10 +3,12 @@ from importlib.util import find_spec
 from typing import Callable, List
 
 import hydra
-from omegaconf import DictConfig
+from omegaconf import OmegaConf, DictConfig
 from pytorch_lightning import Callback
 from pytorch_lightning.loggers import Logger
 from pytorch_lightning.utilities import rank_zero_only
+from pathlib import Path
+from os import makedirs
 
 from sri_maper.src.utils import pylogger, rich_utils
 
@@ -207,3 +209,29 @@ def save_file(path: str, content: str) -> None:
     """Save file in rank zero mode (only on one process in multi-GPU setup)."""
     with open(path, "w+") as file:
         file.write(content)
+
+
+def build_hydra_config_notebook(
+    root_dir: str = "../..",
+    config_module: str = "sri_maper.configs",
+    config_name: str = "train.yaml",
+    overrides: List[str] = [],
+) -> DictConfig:
+    """Makes Hydra config compatible with Jupyter Notebook"""
+    with hydra.initialize_config_module(config_module=config_module, version_base="1.3"):
+        cfg = hydra.compose(
+            config_name=config_name, 
+            overrides=[
+                f"paths.root_dir={root_dir}",
+                "paths.output_dir=${hydra.run.dir}",
+                "extras.print_config=false",
+                "extras.enforce_tags=false",
+            ] + overrides, 
+            return_hydra_config=True
+        )
+        hydra.core.hydra_config.HydraConfig.instance().set_config(cfg)
+    hydra_logs_root = Path(cfg.paths.output_dir) / Path(cfg.hydra.output_subdir)
+    makedirs(hydra_logs_root, exist_ok=True)
+    OmegaConf.save(cfg, hydra_logs_root / Path("config.yaml"))
+    return cfg
+

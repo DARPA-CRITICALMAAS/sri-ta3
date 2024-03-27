@@ -28,6 +28,9 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     if cfg.get("seed"):
         seed_everything(cfg.seed, workers=True)
     
+    log.info(f"Preprocessing rasters...")
+    hydra.utils.call(cfg.preprocess)
+    
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 

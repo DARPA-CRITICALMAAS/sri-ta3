@@ -23,6 +23,9 @@ def test(cfg: DictConfig) -> Tuple[dict, dict]:
     """
 
     assert cfg.ckpt_path
+
+    log.info(f"Preprocessing rasters...")
+    hydra.utils.call(cfg.preprocess)
     
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
