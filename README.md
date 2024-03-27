@@ -23,7 +23,7 @@ cd sri-ta3
 # installs from source code
 python3 -m pip install -e .
 ```
-*If installation succeeded without errors,* you should be able to run the code locally. An [example notebook file](./sri_maper/notebooks/predict_with_pretrained.ipynb) is provided to show how to load a pretrained model checkpoint for inference. You can view/run that notebook file or see advanced uses for training, etc. in later README sections.
+*If installation succeeded without errors,* you should be able to run the code locally. While we strongly encourage using the command-line-interface (CLI) to MAPER, we provide [example notebook files](./sri_maper/notebooks/) to demonstrate one might use the built CLI from a notebook or python file. You can view the example notebook files to get a sense of what the CLI is capable of. See [Command-Line-Interface Tutorial]() below for getting started with the CLI.
 
 #### Install with docker container that is run locally
 This setup is slightly more involved but provides more robustness across physical devices by using docker. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. First, edit the `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY` variables [project_vars.sh](project_vars.sh) to your use case. After editing [project_vars.sh](project_vars.sh), please clone the repo, and build the docker image. Below are example commands to do so using the conenivence scripts.
@@ -39,7 +39,7 @@ Optionally, if you would like to override the default `logs` and `data` folders 
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/logs ./logs
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/data ./data
 ```
-*If installation succeeded without errors,* you should be able to start the docker container and run the code within it. An [example notebook file](./sri_maper/notebooks/predict_with_pretrained.ipynb) is provided to show how to load a pretrained model checkpoint for inference. You can view/run that notebook file within the docker container. Below are example commands to do so using the conenivence scripts. See advanced uses for training, etc. in later README sections.
+*If installation succeeded without errors,* you should be able to run the code locally. While we strongly encourage using the command-line-interface (CLI) to MAPER, we provide [example notebook files](./sri_maper/notebooks/) to demonstrate one might use the built CLI from a notebook or python file. You can view the example notebook files to get a sense of what the CLI is capable of. Below are example commands to do so using the conenivence scripts. See [Command-Line-Interface Tutorial]() below for getting started with the CLI.
 ```bash
 # starts the docker container
 bash docker/run_docker_local.sh
@@ -78,7 +78,7 @@ cd sri-ta3
 # builds docker image (installing source in image) and pushes to docker repo
 bash docker/run_docker_build_push.sh
 ```
-*If installation succeeded without errors,* you should be able to start the docker container and run the code within it. An [example notebook file](./sri_maper/notebooks/predict_with_pretrained.ipynb) is provided to show how to load a pretrained model checkpoint for inference. You can view/run that notebook file within the docker container. Below are example commands to do so using the conenivence scripts. See advanced uses for training, etc. in later README sections.
+*If installation succeeded without errors,* you should be able to run the code locally. While we strongly encourage using the command-line-interface (CLI) to MAPER, we provide [example notebook files](./sri_maper/notebooks/) to demonstrate one might use the built CLI from a notebook or python file. You can view the example notebook files to get a sense of what the CLI is capable of. Below are example commands to do so using the conenivence scripts. See [Command-Line-Interface Tutorial]() below for getting started with the CLI.
 ```bash
 # starts the docker container
 bash docker/run_docker_k8s.sh
@@ -87,41 +87,51 @@ bash docker/run_docker_k8s.sh
 ```
 
 
-## Advanced Use: Training and Testing
+## Command-Line-Interface (CLI) Tutorial
+
+Using the CLI is the suggested method of integration into the MAPER code. As additional documentation, we provide [example notebook files](./sri_maper/notebooks/) that use the CLI internally within the jupyter notebook files. However, all actions performed in the jupyter notebook can be performed with the CLI (the notebooks just call the CLI functions internally). We suggest viewing the notebooks files as is (i.e. without running) to understand the CLI, then experiment with using the CLI directly. Below we give examples of the `train`, `test`, `map`, and `pretrain` capabilties through the CLI.
 
 Train model with default configuration
 
 ```bash
 # train on CPU
-python src/train.py trainer=cpu
+python sri_maper/src/train.py trainer=cpu
 
 # train on GPU
-python src/train.py trainer=gpu
+python sri_maper/src/train.py trainer=gpu
 
-# train on multi-GPU - AVOID (needs debug)
-python src/train.py trainer=ddp
+# train on multi-GPU
+python sri_maper/src/train.py trainer=ddp
 ```
 
 Train model with chosen experiment configuration from [configs/experiment/](configs/experiment/)
 
 ```bash
-python src/train.py experiment=example
+python sri_maper/src/train.py experiment=[example]
 ```
 
 You can override any parameter from command line like this
 
 ```bash
-python src/train.py trainer.max_epochs=20 data.batch_size=64
+python sri_maper/src/train.py trainer.max_epochs=20 data.batch_size=64
+```
+
+You can pretain a model like this
+
+```bash
+python sri_maper/src/pretrain.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
 ```
 
 You can test an existing checkpoint like this
 
 ```bash
-python src/test.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
+python sri_maper/src/test.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
 ```
 
-You can output a map with prospectivity likelihood and uncertainty using an existing checkpoint like this (example in `exp_mvt_resnet_sri.yaml` experiment)
+You can output a map with prospectivity likelihood and uncertainty using an existing checkpoint like this (example in `exp_maniac_resnet_l22_uscont.yaml` experiment)
 
 ```bash
-python src/map.py +experiment=exp_mvt_resnet_sri data.batch_size=128 ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
+python sri_maper/src/map.py +experiment=exp_maniac_resnet_l22_uscont data.batch_size=128 ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
 ```
+
+#### To Do: DocStrings on entire repo; additional explanation of innerworkings of train, test, pretrain, map.
