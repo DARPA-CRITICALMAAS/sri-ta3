@@ -35,6 +35,7 @@ def write_tif(results, path, attributions_flag, datamodule):
     left, top = tif_meta["transform"] * (0, 0)
     right, bottom = tif_meta["transform"] * (tif_meta["width"], tif_meta["height"])
 
+    tif_files = []
     for idx, tif_layer in enumerate(output_rasters):
         # forms tif ndarray
         tif_data = np.empty(shape=(tif_meta["height"], tif_meta["width"]))
@@ -45,6 +46,8 @@ def write_tif(results, path, attributions_flag, datamodule):
         tif_file = f"{path}/{tif_layer}_{str_bounds([left,bottom,right,top])}.tif"
         with rio.open(tif_file, "w", **tif_meta) as out:
             out.write_band(1, tif_data)
+        tif_files.append(tif_file)
+    return tif_files
 
 
 def str_bounds(bounds):

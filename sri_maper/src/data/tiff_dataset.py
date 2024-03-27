@@ -65,7 +65,7 @@ class TiffDataset(Dataset):
         # loads or generates df indicating which tif patches are VALID
         ds_valid_patches = []
         for tif_idx, tif_file in  enumerate(tif_files):
-            valid_patch_file = f"{str(tif_file).split('.')[0]}_valid_p{window_size}.npy"
+            valid_patch_file = Path(tif_file).parent / Path(f"{Path(tif_file).stem}_valid_p{window_size}.npy")
             try:
                 # check if valid patch dataframe already exists
                 log.info(f"Loading np.ndarray enumerating valid patches for {tif_file} (~5 min)")

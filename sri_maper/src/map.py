@@ -78,11 +78,9 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
         res_df = pd.concat(res_df, ignore_index=True)
         
         tif_file_path = f"{cfg.paths.output_dir}"
-        utils.write_tif(res_df.values, tif_file_path, cfg.extract_attributions, datamodule)
+        map_paths = utils.write_tif(res_df.values, tif_file_path, cfg.extract_attributions, datamodule)
 
-    test_metrics = trainer.callback_metrics
-
-    return test_metrics, object_dict
+    return map_paths, object_dict
 
 
 @hydra.main(version_base="1.3", config_path="../configs/", config_name="test.yaml")
