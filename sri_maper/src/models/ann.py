@@ -14,6 +14,7 @@ class ANN(nn.Module):
             image_size: int = 5,
             num_output_classes: int = 1,
             dropout_rate: Optional[List[float]] = [0.0, 0.25, 0.25],
+            out_bias: bool = False,
     ) -> None:
         super().__init__()
 
@@ -31,7 +32,7 @@ class ANN(nn.Module):
 
             torch.nn.PReLU(),
             torch.nn.Dropout(p=dropout_rate[2]),
-            torch.nn.Linear(num_input_channels//4, num_output_classes, bias=False)
+            torch.nn.Linear(num_input_channels//4, num_output_classes, bias=out_bias)
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -39,7 +40,7 @@ class ANN(nn.Module):
         return self.classifier(x)
 
     def activate_dropout(self):
-        for m in self.ff:
+        for m in self.classifier:
             if m.__class__.__name__.startswith('Dropout'):
                 m.train()
 
