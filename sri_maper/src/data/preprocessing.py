@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 from os import makedirs
 from pathlib import Path
 from tqdm import tqdm
@@ -11,25 +11,21 @@ from sri_maper.src import utils
 log = utils.get_pylogger(__name__)
 
 
-def generate_raster_stacks(raster_stacks: List):
-    for raster_stack in tqdm(raster_stacks): 
+def generate_raster_stacks(raster_stacks):
+    for raster_stack in tqdm(raster_stacks):
         if not Path(raster_stack.raster_stack_path).is_file():
             generate_raster_stack(
                 raster_stack.raster_stack_path,
                 raster_stack.raster_files_path,
                 raster_stack.dilation_size,
-                raster_stack.outlier_removal,
                 raster_stack.raster_files,
-                raster_stack.raster_files_types,
             )
 
 def generate_raster_stack(
     raster_stack_path: Path,
     raster_files_path: Path,
     dilation_size: int,
-    outlier_removal: bool,
     raster_files: List[str],
-    raster_files_types: List[str],
 ):
     r"""
     Generates a multi-band GeoTiff (i.e. raster stack). Assumes each raster is already
@@ -47,7 +43,6 @@ def generate_raster_stack(
     :return: None
     :rtype: None
     """
-
     # loads the individual rasters
     rasters = load_rasters(raster_files, raster_files_path)
     rasters_data = [raster.read(1, masked=True) for raster in rasters]
@@ -57,26 +52,26 @@ def generate_raster_stack(
 
     # creates the raster dataframe
     raster_df = pd.DataFrame()
-    for i, raster_data in enumerate(rasters_data):
-        raster_df[f"{raster_files[i]}"] = raster_data.filled().flatten()
-    raster_type_dict = \
-        {raster_file: raster_type for raster_file, raster_type in zip(raster_files, raster_files_types)}
+    for raster_file, raster_data in zip(raster_files, rasters_data):
+        raster_df[f"{raster_file.path}"] = raster_data.filled().flatten()
 
-    # removes outliers and normalizes
-    if outlier_removal:
-        raster_df = tukey_remove_outliers(raster_df, raster_type_dict)
-    raster_df = normalize_df(raster_df, raster_type_dict)
-
-    # extracts masked numpy arrays from the from dataframe
     new_rasters_data = []
-    for i, tif in enumerate(raster_files):
-        new_raster_data = raster_df[f"{tif}"].values.reshape(raster_shapes[i])
+    for i, raster_file in tqdm(enumerate(raster_files)):
+        raster_name = raster_file.path
+        raster_type = raster_file.type
+        outlier_removal = raster_file.outlier_removal
+        normalize = raster_file.normalize
+        # removes outliers and normalizes
+        raster_df = tukey_remove_outliers(raster_df, raster_name, raster_type, outlier_removal)
+        raster_df = normalize_df(raster_df, raster_name, raster_type, normalize)
+        # extracts masked numpy arrays from the from dataframe
+        new_raster_data = raster_df[f"{raster_name}"].values.reshape(raster_shapes[i])
         new_raster_data = np.ma.masked_array(new_raster_data, mask=~rasters_msk[i], fill_value=np.nan)
         new_rasters_data.append(new_raster_data)
 
     # storing pre-dilation NaNs locations
     nan_mask = np.isnan(new_rasters_data[-1])
-    
+
     # dilates the rasters
     new_rasters_data = [fillnodata(new_raster_data, max_search_distance=dilation_size) for new_raster_data in new_rasters_data]
 
@@ -90,7 +85,7 @@ def generate_raster_stack(
     log.debug(f"Writing a raster stack with the following meta data: {raster_stack_meta}")
     makedirs(Path(raster_stack_path).parent, exist_ok=True)
     with rasterio.open(Path(raster_stack_path), "w", **raster_stack_meta) as raster_stack:
-        tags = {Path(raster_file).stem: idx for idx, raster_file in enumerate(raster_files)}
+        tags = {Path(raster_file.path).stem: idx for idx, raster_file in enumerate(raster_files)}
         tags["ns"] = "evidence_layers"
         raster_stack.update_tags(**tags)
         for idx, new_raster_data in enumerate(new_rasters_data):
@@ -98,35 +93,43 @@ def generate_raster_stack(
 
 
 def tukey_remove_outliers(
-    df, 
-    df_types,
-    multiplier=1.5, 
+    df,
+    col_name,
+    col_type,
+    remove_outliers=False,
+    multiplier=1.5,
     replacement_percentile=0.05
 ):
-    for col in df.columns:
-        if df_types[col] == "bool": continue
-        # get the IQR
-        Q1 = df.loc[:,col].quantile(0.25)
-        Q3 = df.loc[:,col].quantile(0.75)
-        IQR = Q3 - Q1
-        # get the lower bound replacements and replace the values
-        P05 = df.loc[:,col].quantile(replacement_percentile)
-        mask = df.loc[:,col] < (Q1 - multiplier * IQR)
-        df.loc[mask, col] = P05
-        # get the upper bound replacements and replace the values
-        P95 = df.loc[:,col].quantile(1.0-replacement_percentile)
-        mask = df.loc[:,col] > (Q3 + multiplier * IQR)
-        df.loc[mask, col] = P95
+    if not remove_outliers or col_type == "bool":
+        return df
+    # get the IQR
+    Q1 = df.loc[:,col_name].quantile(0.25)
+    Q3 = df.loc[:,col_name].quantile(0.75)
+    IQR = Q3 - Q1
+    # get the lower bound replacements and replace the values
+    P05 = df.loc[:,col_name].quantile(replacement_percentile)
+    mask = df.loc[:,col_name] < (Q1 - multiplier * IQR)
+    df.loc[mask, col_name] = P05
+    # get the upper bound replacements and replace the values
+    P95 = df.loc[:,col_name].quantile(1.0-replacement_percentile)
+    mask = df.loc[:,col_name] > (Q3 + multiplier * IQR)
+    df.loc[mask, col_name] = P95
     return df
 
 
 def normalize_df(
     df,
-    df_types
+    col_name,
+    col_type,
+    normalize=True,
 ):
-    for col in df.columns:
-        if df_types[col] == "bool": continue
-        df[col] = (df[col]-df[col].mean()) / df[col].std()
+    if not normalize or col_type == "bool":
+        return df
+    std = df[col_name].std()
+    if std != 0.0:
+        df[col_name] = (df[col_name]-df[col_name].mean()) / std
+    else:
+        raise ValueError(f"Standard deviation of {col_name} is 0.0.")
     return df
 
 
@@ -134,11 +137,11 @@ def load_rasters(
     raster_files: List[str],
     rasters_path: str,
 ):
-    return [load_raster(Path(rasters_path) / Path(raster_file)) for raster_file in raster_files]
+    return [load_raster(Path(rasters_path) / Path(raster_file.path)) for raster_file in raster_files]
 
 
 def load_raster(
-    raster_path: Path,
+    raster_path,
 ):
     raster = rasterio.open(raster_path)
     log.debug(f"-------- {raster_path} raster details --------\n")

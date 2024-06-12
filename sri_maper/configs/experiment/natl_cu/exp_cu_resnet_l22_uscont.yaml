@@ -17,8 +17,9 @@ enable_attributions: true
 
 data:
   window_size: 5
-  tif_dir: ${paths.data_dir}/H3/Porphyry-Copper
+  tif_dir: ${paths.data_dir}/H3/Porphyry-Copper-updated
   likely_neg_range: [0.3, 0.5]
+
 
 model:
   optimizer:

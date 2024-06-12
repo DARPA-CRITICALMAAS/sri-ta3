@@ -12,7 +12,7 @@ class ResNet(nn.Module):
             num_input_channels: int = 12,
             num_output_classes: int = 1,
             dropout_rate: float = 0.5,
-            backbone_name: Literal["resnet18", "resnet10t"] = "resnet10t",
+            backbone_name: Literal["resnet18", "resnet10t"] = "resnet18",
             out_bias: bool = False,
     ) -> None:
         super().__init__()
