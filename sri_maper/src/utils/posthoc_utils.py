@@ -33,7 +33,7 @@ class BinaryTemperatureScaling(nn.Module):
         """
         Tune the tempearature of the model (using the validation set).
         We're going to set it to optimize NLL.
-        
+
         """
         nll_criterion = nn.BCEWithLogitsLoss().to(self.model.device)
         ece_criterion = _ECELoss().to(self.model.device)
@@ -45,9 +45,10 @@ class BinaryTemperatureScaling(nn.Module):
         logits_list = []
         labels_list = []
         with torch.no_grad():
-            for inputs, label in islice(val_loader, batch_limit):
+            for inputs, label, pca_matrix in islice(val_loader, batch_limit):
                 inputs = inputs.to(dtype=torch.float32, device=self.model.device)
-                logits = self.model(inputs).detach()
+                pca_matrix = pca_matrix.to(dtype=torch.float32, device=self.model.device) if len(pca_matrix.shape) != 1 else None
+                logits = self.model(inputs, pca_matrix).detach()
                 logits_list.append(logits)
                 labels_list.append(label)
             logits = torch.cat(logits_list).to(dtype=torch.float, device=self.model.device).reshape(-1,1)
@@ -124,9 +125,9 @@ class _ECELoss(nn.Module):
 
 class ThresholdMoving(nn.Module):
     """
-        A class to search for the best classification threshold of the model 
+        A class to search for the best classification threshold of the model
         (using the validation set) w.r.t. a provided metric.
-    
+
     """
     def __init__(self, model):
         super(ThresholdMoving, self).__init__()
@@ -141,19 +142,20 @@ class ThresholdMoving(nn.Module):
         logits = []
         labels = []
         with torch.no_grad():
-            for inputs, label in islice(val_loader, batch_limit):
+            for inputs, label, pca_matrix in islice(val_loader, batch_limit):
                 inputs = inputs.to(dtype=torch.float32, device=self.model.device)
-                logit = torch.sigmoid(self.model.calibrated_forward(inputs))
+                pca_matrix = pca_matrix.to(dtype=torch.float32, device=self.model.device) if len(pca_matrix.shape) != 1 else None
+                logit = torch.sigmoid(self.model.calibrated_forward(inputs, pca_matrix))
                 logits.append(logit.detach().cpu().numpy())
                 labels.append(label.detach().cpu().numpy())
             logits = np.concatenate(logits, axis=None)
             labels = np.concatenate(labels, axis=None)
-    
+
         # search thresholds for imbalanced classification
         thresholds = np.arange(0, 1, 0.001)
         # evaluate each threshold
         scores = [max_metric(labels, self.to_labels(logits, t)) for t in thresholds]
-        
+
         # get best threshold
         ix = np.argmax(scores)
         log.info(f"Threshold={thresholds[ix]:.3f}, Validation F-Score={scores[ix]:.5f}")

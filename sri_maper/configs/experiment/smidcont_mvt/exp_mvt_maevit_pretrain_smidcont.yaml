@@ -21,10 +21,12 @@ data:
   downsample: false
   oversample: false
   frac_train_split: 0.9
+  num_pca_components: null
+  in_pca_space: false
 
 model:
   net:
-    input_dim: 25
+    input_dim: 25 # if want to use PCA (i.e., num_pca_components is not null), set it to num_pca_components
 
 trainer:
   min_epochs: 10

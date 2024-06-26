@@ -4,7 +4,7 @@ from copy import copy
 
 
 def write_tif(results, path, attributions_flag, datamodule):
-    
+
     # defines the tif meta data
     tif_meta = copy(datamodule.data_predict.tif_meta)
     tif_meta.update({
@@ -17,13 +17,13 @@ def write_tif(results, path, attributions_flag, datamodule):
 
     # extracts raster pts and data
     result_pts = np.dot(
-        np.asarray((~tif_meta["transform"]).column_vectors).T, 
+        np.asarray((~tif_meta["transform"]).column_vectors).T,
         np.vstack((results[:,0], results[:,1], np.ones_like(results[:,1])))
     ).astype(int).T
     data = results[:,2:]
-    
+
     output_rasters = [
-        "Likelihoods", 
+        "Likelihoods",
         "Uncertainties",
     ]
 
@@ -38,7 +38,7 @@ def write_tif(results, path, attributions_flag, datamodule):
         tif_data = np.empty(shape=(tif_meta["height"], tif_meta["width"]))
         tif_data[:] = np.nan
         tif_data[result_pts[:,1], result_pts[:,0]] = data[:,idx].astype(float)
-        
+
         # writes the output tif
         tif_file = f"{path}/{tif_layer}.tif"
         with rio.open(tif_file, "w", **tif_meta) as out:

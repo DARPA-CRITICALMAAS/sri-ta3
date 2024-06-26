@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import timm
-from typing import Literal
+from typing import Literal, Union
 
 from sri_maper.src import utils
 
@@ -18,7 +18,7 @@ class ResNet(nn.Module):
         super().__init__()
 
         self.backbone = timm.create_model(
-            model_name=backbone_name, # oother option - "resnet10t"
+            model_name=backbone_name, # other option - "resnet10t"
             pretrained=False,
             in_chans=num_input_channels,
             features_only=True,
@@ -40,8 +40,12 @@ class ResNet(nn.Module):
             torch.nn.Linear(backbone_features, num_output_classes, bias=out_bias)
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.classifier(self.backbone(x)[0])
+    def forward(self,
+                img: torch.Tensor,
+                pca_matrix: Union[torch.Tensor, None]=None
+        ) -> torch.Tensor:
+        img_input = torch.einsum('ijkl,ijm->imkl', img, pca_matrix) if pca_matrix is not None else img
+        return self.classifier(self.backbone(img_input)[0])
 
     def activate_dropout(self):
         for m in self.classifier:

@@ -17,12 +17,14 @@ enable_attributions: false
 
 data:
   window_size: 5
-  tif_dir: ${paths.data_dir}/H3/mvt-smidcont
+  tif_dir: ${paths.data_dir}/H3/mvt-smidcont-new
   likely_neg_range: [0.3, 0.6]
+  num_pca_components: 20 #
+  in_pca_space: true
 
 model:
   net:
-    num_input_channels: 25
+    num_input_channels: 20 # if want to use PCA (i.e., num_pca_components is not null), set it to num_pca_components
   smoothing: 0.3
 
 trainer:
