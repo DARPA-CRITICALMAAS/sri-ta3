@@ -1,0 +1,56 @@
+# @package _global_
+
+defaults:
+  - override /preprocess: mvt-h3-aoi-1-v5.yaml
+  - override /model: resnet.yaml
+  - override /trainer: ddp # gpu
+  - override /callbacks: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["mvt", "resnet", "h3", "aoi-1", "v5"]
+task_name: "cmta3-classifier-mvt-h3-aoi-1-v5"
+
+seed: 777
+enable_attributions: true
+
+data:
+  window_size: 5
+  tif_dir: ${paths.data_dir}/H3/mvt-h3-aoi-1-v5 ### 20 layers
+  likely_neg_range: [0.1, 0.9]
+  frac_train_split: 0.8
+
+model:
+  optimizer:
+    _target_: torch.optim.AdamW
+    lr: 1e-3
+    weight_decay: 1e-2
+  net:
+    _target_: sri_maper.src.models.resnet.ResNet
+    num_input_channels: 20
+    num_output_classes: 1
+    dropout_rate: 0.5
+  compile: false
+  gain: 1.0
+  mc_samples: 100
+  smoothing: 0.3
+  extract_attributions: ${enable_attributions}
+
+trainer:
+  min_epochs: 5
+  max_epochs: 100
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
+  val_check_interval: 0.5
+
+logger:
+  wandb:
+    name: "resnet|lnr=${data.likely_neg_range}"
+
+callbacks:
+  model_checkpoint:
+    monitor: val/auprc
+  early_stopping:
+    monitor: val/auprc_best

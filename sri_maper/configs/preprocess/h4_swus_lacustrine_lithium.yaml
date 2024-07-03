@@ -1,0 +1,10 @@
+_target_: sri_maper.src.data.preprocessing.generate_raster_stacks
+raster_stacks:
+  - raster_stack_path: ${data.tif_dir}/h4_swus_lacustrine_lithium_d${data.window_size}.tif
+    raster_files_path: ${paths.data_dir}/raster_libraries/h4_swus_lacustrine_lithium_raster_library
+    dilation_size: ${data.window_size}
+    raster_files:
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true

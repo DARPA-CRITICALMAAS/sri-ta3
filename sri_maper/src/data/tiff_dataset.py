@@ -160,7 +160,8 @@ class TiffDataset(Dataset):
             # Change the axis marks
             ax.set_yticks(np.arange(0, transformation_matrix.shape[0]), np.arange(1, transformation_matrix.shape[0] + 1))
             # ax.set_xticks(np.arange(0, transformation_matrix.shape[1]), np.arange(1, transformation_matrix.shape[1] + 1))
-            ax.set_xticks(np.arange(0, transformation_matrix.shape[1]), list(raster_names.keys())[1:])
+            raster_names_list = list(dict(sorted(raster_names.items(), key=lambda item: int(item[1]))))[:-1]
+            ax.set_xticks(np.arange(0, transformation_matrix.shape[1]), raster_names_list)
             ax.xaxis.tick_top()
             ax.set_xticklabels(ax.get_xticklabels(), rotation=60, ha='left', fontsize=7)
 
