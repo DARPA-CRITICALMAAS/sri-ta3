@@ -10,11 +10,11 @@ class PatchDropLayer(torch.nn.Module):
     def __init__(self, ratio) -> None:
         super().__init__()
         self.ratio = ratio
-    
+
     def forward(self, patches : torch.Tensor):
         B, L, D = patches.shape  # batch, length, dim
         len_keep = int(L * (1 - self.ratio))
-        
+
         # sorts noise for each sample
         noise = torch.rand(B, L, device=patches.device)
         shuffle = torch.argsort(noise, dim=1)
@@ -43,7 +43,7 @@ class MAE_Encoder(torch.nn.Module):
         num_head:      int = 3,
         mask_ratio:    float = 0.0,
     ) -> None:
-        
+
         super().__init__()
 
         # inits learned CLS token
@@ -53,9 +53,9 @@ class MAE_Encoder(torch.nn.Module):
         # inits learned patch embedding
         self.patch_embedding = torch.nn.Sequential(
             torch.nn.Conv2d(
-                in_channels=input_dim, 
-                out_channels=emb_dim, 
-                kernel_size=patch_size, 
+                in_channels=input_dim,
+                out_channels=emb_dim,
+                kernel_size=patch_size,
                 stride=patch_size
             ),
             torch.nn.Flatten(start_dim=2)
@@ -99,7 +99,7 @@ class MAE_Decoder(torch.nn.Module):
         num_layer:     int = 4,
         num_head:      int = 3,
     ) -> None:
-        
+
         super().__init__()
 
         # inits projection to decoder dim
@@ -171,7 +171,7 @@ class MAE_ViT(torch.nn.Module):
         predicted_img = self.decoder(features,  restore)
         # returns combined patches into images
         return self.patch2img(predicted_img), self.patch2img(mask.unsqueeze(-1).repeat(1, 1, predicted_img.shape[-1]))
-    
+
     def contains_sync_batchnorm(self):
         # checks for SynBatchNorms
         return utils.contains_sync_batchnorm(self.encoder) or utils.contains_sync_batchnorm(self.decoder) # false
