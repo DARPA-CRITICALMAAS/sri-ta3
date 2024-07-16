@@ -33,8 +33,9 @@ class ANN(nn.Module):
             torch.nn.Dropout(p=dropout_rate[2]),
             torch.nn.Linear(num_input_channels//4, num_output_classes, bias=False)
         )
+        self.frozen_embedding = None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, row: torch.Tensor, col: torch.Tensor) -> torch.Tensor:
         x = x[:, :, self.image_size//2, self.image_size//2]
         return self.classifier(x)
 

@@ -53,7 +53,7 @@ def test(cfg: DictConfig) -> Tuple[dict, dict]:
 
     # preparation
     datamodule.setup("validate")
-    model = model.__class__.load_from_checkpoint(cfg.ckpt_path)
+    model = model.__class__.load_from_checkpoint(cfg.ckpt_path, net=model.net)
 
     if "strategy" not in cfg.get("trainer") and model.net.contains_sync_batchnorm():
         # multi-GPU/CPU process train to single GPU/CPU process inference fix

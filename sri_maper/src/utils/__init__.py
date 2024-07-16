@@ -13,5 +13,5 @@ from sri_maper.src.utils.utils import (
     revert_sync_batchnorm,
     contains_sync_batchnorm,
 )
-from sri_maper.src.utils.tif_utils import write_tif
+from sri_maper.src.utils.storage_utils import write_tif, write_embeddings, collect_gpu_results
 from sri_maper.src.utils.posthoc_utils import BinaryTemperatureScaling, ThresholdMoving

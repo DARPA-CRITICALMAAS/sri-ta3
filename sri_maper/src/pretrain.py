@@ -2,11 +2,12 @@ from typing import List, Optional, Tuple
 
 import hydra
 from omegaconf import DictConfig
-from torch import set_float32_matmul_precision
+from torch import set_float32_matmul_precision, concat as pt_concat
 from pytorch_lightning import Callback, LightningDataModule, LightningModule, Trainer, seed_everything
 from pytorch_lightning.loggers import Logger
-from sklearn.metrics import f1_score
+from pathlib import Path
 
+from sri_maper.src.models.mae_vit_classifier import DummyPatchDropLayer
 from sri_maper.src import utils
 
 log = utils.get_pylogger(__name__)
@@ -83,6 +84,15 @@ def pretrain(cfg: DictConfig) -> Tuple[dict, dict]:
 
         log.info("Testing!")
         trainer.test(model=model, datamodule=datamodule)
+
+        log.info("Computing the pretrained model embeddings!")
+        model.net.encoder.patch_drop = DummyPatchDropLayer()
+        predictions = trainer.predict(model=model, datamodule=datamodule)
+        predictions = utils.collect_gpu_results(pt_concat(predictions).cpu().numpy(), trainer)
+        log.info(f"GPU:{trainer.strategy.global_rank} finished!")
+        if trainer.strategy.global_rank == 0:
+            log.info(f"GPU:{trainer.strategy.global_rank} is storing pretrained embeddings!")
+            utils.write_embeddings(predictions, Path(ckpt_path).parent, datamodule)
 
     test_metrics = trainer.callback_metrics
 

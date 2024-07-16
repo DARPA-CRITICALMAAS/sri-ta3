@@ -2,13 +2,10 @@ from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn.functional as F
-import math
 from pytorch_lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 
 from torchmetrics.image import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
-from torchmetrics.functional.image import structural_similarity_index_measure as ssim
-from captum.attr import IntegratedGradients
 
 from sri_maper.src import utils
 log = utils.get_pylogger(__name__)
@@ -129,7 +126,7 @@ class SSCMALitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        img, _ = batch
+        img = batch[0]
         pred_img, mask = self.forward(img)
         loss = self.compute_loss(img, pred_img, mask)
         return loss, img, pred_img, mask
@@ -226,28 +223,11 @@ class SSCMALitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        # extracts feature attributions
-        ig = IntegratedGradients(self.net)
-        attribution = ig.attribute(batch[0].requires_grad_(), n_steps=50).mean(dim=(-1,-2))
+        imgs, _, lons, lats, _, _ = batch
+        feats, _, _ = self.net.encoder(imgs)
+        feats = feats[:,0,:].detach().cpu().squeeze()
 
-        # enables Monte Carlo Dropout
-        self.net.activate_dropout()
-
-        # generates MC samples
-        preds = torch.sigmoid(
-            self.forward(
-                batch[0].tile((self.hparams.mc_samples,1,1,1))
-            ).reshape(self.hparams.mc_samples,-1)
-        ).detach()
-
-        # computes mean and std of MC samples
-        means = preds.mean(dim=0).squeeze()
-        stds = preds.std(dim=0).squeeze()
-
-        return torch.concat((torch.stack((batch[2], batch[3], means, stds), dim=1), attribution), dim=1)
-
-    def on_predict_epoch_end(self, results):
-        self.trainer.results = torch.vstack(results[0]).cpu().numpy()
+        return torch.concat((torch.stack((lons.detach().cpu(), lats.detach().cpu()), dim=1), feats), dim=1)
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

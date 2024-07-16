@@ -166,6 +166,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
+            persistent_workers=self.hparams.num_workers > 0,
         )
 
     def val_dataloader(self, shuffle: bool = False) -> DataLoader[Any]:
@@ -179,6 +180,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=shuffle,
+            persistent_workers=self.hparams.num_workers > 0,
         )
 
     def test_dataloader(self) -> DataLoader[Any]:
@@ -192,6 +194,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
+            persistent_workers=self.hparams.num_workers > 0,
         )
 
     def predict_dataloader(self) -> DataLoader[Any]:

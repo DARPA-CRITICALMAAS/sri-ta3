@@ -56,6 +56,7 @@ class CMALitModule(LightningModule):
         threshold: float = 0.5,
         temperature: float = 1.0,
         extract_attributions: bool = True,
+        pretrained_state_dict_keys: Tuple[str] = (),
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -68,7 +69,10 @@ class CMALitModule(LightningModule):
         # self.example_input_array = torch.Tensor(16, 23, 33, 33)
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
-        self.save_hyperparameters(logger=False)
+        self.save_hyperparameters(logger=False, ignore=["net"])
+
+        # enables more flexible checkpointing
+        self.strict_loading = False
 
         self.net = net
 
@@ -100,24 +104,43 @@ class CMALitModule(LightningModule):
         # for tracking best so far validation AUC
         self.val_auc_best = MaxMetric()
         self.val_auprc_best = MaxMetric()
+    
+    def on_save_checkpoint(self, checkpoint):
+        del_k = []
+        for k in checkpoint['state_dict'].keys():
+            for ignore_key in self.hparams.pretrained_state_dict_keys:
+                if ignore_key in k:
+                    del_k.append(k)
+                    break
+        for k in del_k: del checkpoint['state_dict'][k]
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, 
+        x: torch.Tensor,
+        cols: torch.Tensor,
+        rows: torch.Tensor,
+    ) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
 
         :param x: The input tensor for forward pass (i.e. window from the datacube).
 
         :return: A tensor of logits.
         """
-        return self.net(x)
+        return self.net(x, cols, rows)
 
-    def calibrated_forward(self, x: torch.Tensor) -> torch.Tensor:
+    def calibrated_forward(
+        self, 
+        x: torch.Tensor,
+        cols: torch.Tensor,
+        rows: torch.Tensor,
+    ) -> torch.Tensor:
         """Perform a calibrated forward pass through the model `self.net`.
 
         :param x: The input tensor for forward pass (i.e. window from the datacube).
 
         :return: A tensor of calibrated logits.
         """
-        return self.net(x) / torch.tensor(self.hparams.temperature).to(x)
+        return self.net(x, cols, rows) / torch.tensor(self.hparams.temperature).to(x)
 
     def on_train_start(self) -> None:
         """Lightning hook that is called when training begins."""
@@ -141,11 +164,11 @@ class CMALitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        x, y = batch
+        x, y, _, _, cols, rows = batch
         if calibrated:
-            logits = self.calibrated_forward(x)
+            logits = self.calibrated_forward(x, cols, rows)
         else:
-            logits = self.forward(x)
+            logits = self.forward(x, cols, rows)
         loss = self.criterion(logits, y.unsqueeze(1) * (1.0 - self.hparams.smoothing) + 0.5 * self.hparams.smoothing)
         preds = torch.sigmoid(logits)
         return loss, preds.detach(), y.detach()
@@ -249,11 +272,17 @@ class CMALitModule(LightningModule):
             - Prediction Uncertainty
             - Prediction Feature Attributions
         """
+        patch, _, lon, lat, col, row = batch
 
         # extracts feature attributions
         if self.hparams.extract_attributions:
+            # DEBUG add a check to enable extract_attributions with embedding model
             ig = IntegratedGradients(self.net)
-            attribution = ig.attribute(batch[0].requires_grad_(), n_steps=12).mean(dim=(-1,-2)).detach()
+            attribution = ig.attribute(
+                patch.requires_grad_(), 
+                additional_forward_args=(col, row),
+                n_steps=12
+            ).mean(dim=(-1,-2)).detach()
 
         # enables Monte Carlo Dropout
         if self.hparams.mc_samples > 1:
@@ -262,7 +291,9 @@ class CMALitModule(LightningModule):
         # generates MC samples
         preds = torch.sigmoid(
             self.calibrated_forward(
-                batch[0].tile((self.hparams.mc_samples,1,1,1))
+                patch.tile((self.hparams.mc_samples,1,1,1)),
+                col.tile((self.hparams.mc_samples)),
+                row.tile((self.hparams.mc_samples)),
             ).reshape(self.hparams.mc_samples,-1)
         ).detach()
 
@@ -270,23 +301,9 @@ class CMALitModule(LightningModule):
         means = preds.mean(dim=0).squeeze()
         stds = preds.std(dim=0).squeeze()
 
-        results = torch.stack((batch[2], batch[3], means, stds), dim=-1)
+        results = torch.stack((lon, lat, means, stds), dim=-1)
         if self.hparams.extract_attributions: results = torch.concat((results, attribution), dim=-1)
         return results
-
-    def on_predict_epoch_end(self, results):
-        results = torch.concat(results[0]).cpu().numpy()
-        cols = ["lon","lat","mean","std"] + [f"attr{n}" for n in range(results.shape[-1]-4)]
-        res_df = pd.DataFrame(data=results, columns=cols)
-        res_df.to_csv(f"gpu_{self.trainer.strategy.global_rank}_result.csv",index=False)
-        self.trainer.strategy.barrier()
-
-        # TODO DEBUG following
-        # if self.trainer.strategy.world_size > 1:
-            # num_dims = results.shape[-1]
-            # results = self.all_gather(results).reshape((-1,num_dims))
-        # if self.trainer.strategy.global_rank == 0:
-            # self.trainer.results = results.cpu().numpy()
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

@@ -110,7 +110,8 @@ setup(
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/discussions/install-requires-vs-requirements/
     install_requires = [
-        "pytorch-lightning>=1.9.4,<2.0.0",
+        "pytorch-lightning>2.2",
+        "torchvision>=0.18.1",
         "torchinfo",
         "timm",
         "torchmetrics>=0.11.4",

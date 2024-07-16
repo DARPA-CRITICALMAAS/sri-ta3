@@ -29,8 +29,9 @@ class ResNet(nn.Module):
             # torch.nn.Linear(self.backbone.layer4[1].bn2.num_features, num_output_classes, bias=False) # resnet18
             torch.nn.Linear(self.backbone.layer4[0].downsample[2].num_features, num_output_classes) # resnet10t
         )
+        self.frozen_embedding = None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, row: torch.Tensor, col: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.backbone(x)[0])
 
     def activate_dropout(self):

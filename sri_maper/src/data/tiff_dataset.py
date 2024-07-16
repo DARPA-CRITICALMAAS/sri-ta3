@@ -11,7 +11,7 @@ from rasterio import Env as rio_env
 from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
-from torch import tensor, half
+import torch
 from imblearn.over_sampling import RandomOverSampler
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KDTree
@@ -59,7 +59,7 @@ class TiffDataset(Dataset):
                     with rio_open(tif_file, driver='GTiff') as tif:
                         tif_tags = tif.tags(ns="evidence_layers")
                         tif_meta = tif.meta
-                        tif_data.append(tensor(tif.read().astype("half"), dtype=half))
+                        tif_data.append(torch.tensor(tif.read().astype("half"), dtype=torch.half))
         return tif_files, tif_data, tif_tags, tif_meta
 
     def _load_valid_patches(self, tif_files, window_size):
@@ -122,12 +122,9 @@ class TiffDataset(Dataset):
         # loads the patch's data
         patch = self.tif_data[source_tif][:-1,row:row+self.window_size,col:col+self.window_size]
 
-        if self.stage == "predict":
-            lon = self.valid_patches[idx,-3]
-            lat = self.valid_patches[idx,-2]
-            return patch, label, lon, lat # produce map
-        else:
-            return patch, label # train/val/test
+        lon = self.valid_patches[idx,-3]
+        lat = self.valid_patches[idx,-2]
+        return patch, label, lon, lat, int(col + 0.5 + self.window_size//2), int(row + 0.5 + self.window_size//2) # produce map
 
 
 def validate_patches(chunk, window_size, tif_file):
@@ -484,7 +481,7 @@ def pu_downsample(
     )
     p_feats = []
     for p_idx in range(len(ds_p)):
-        p_patch, _ = ds_p[p_idx]
+        p_patch = ds_p[p_idx][0]
         p_feats.append(feature_extractor(p_patch))
     # prepares unlabeled dataset
     ds_df_u = ds_df[ds_df["label"] == 0]
@@ -500,7 +497,7 @@ def pu_downsample(
     )
     u_feats = []
     for u_idx in range(len(ds_u)):
-        u_patch, _ = ds_u[u_idx]
+        u_patch = ds_u[u_idx][0]
         u_feats.append(feature_extractor(u_patch))
     # compute the distances between all positives and negatives
     np_samples = np.asarray(p_feats + u_feats)

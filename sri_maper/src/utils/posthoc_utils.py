@@ -45,9 +45,9 @@ class BinaryTemperatureScaling(nn.Module):
         logits_list = []
         labels_list = []
         with torch.no_grad():
-            for inputs, label in islice(val_loader, batch_limit):
+            for inputs, label, _, _, cols, rows in islice(val_loader, batch_limit):
                 inputs = inputs.to(dtype=torch.float32, device=self.model.device)
-                logits = self.model(inputs).detach()
+                logits = self.model(inputs, cols, rows).detach()
                 logits_list.append(logits)
                 labels_list.append(label)
             logits = torch.cat(logits_list).to(dtype=torch.float, device=self.model.device).reshape(-1,1)
@@ -141,9 +141,9 @@ class ThresholdMoving(nn.Module):
         logits = []
         labels = []
         with torch.no_grad():
-            for inputs, label in islice(val_loader, batch_limit):
+            for inputs, label, _, _, cols, rows in islice(val_loader, batch_limit):
                 inputs = inputs.to(dtype=torch.float32, device=self.model.device)
-                logit = torch.sigmoid(self.model.calibrated_forward(inputs))
+                logit = torch.sigmoid(self.model.calibrated_forward(inputs, cols, rows))
                 logits.append(logit.detach().cpu().numpy())
                 labels.append(label.detach().cpu().numpy())
             logits = np.concatenate(logits, axis=None)
