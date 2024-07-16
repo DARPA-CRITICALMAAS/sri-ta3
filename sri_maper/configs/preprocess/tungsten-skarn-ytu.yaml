@@ -3,50 +3,92 @@ raster_stacks:
   - raster_stack_path: ${data.tif_dir}/ytu_tungsten-skarn_d${data.window_size}.tif
     raster_files_path: ${paths.data_dir}/raster_libraries/ytu_tungsten-skarn_raster_library
     dilation_size: ${data.window_size}
-    outlier_removal: false
     raster_files:
-      - "Geophysics/Seismic/Geophysics_LAB.tif"
-      - "Geophysics/Seismic/Geophysics_LAB_HGM.tif"
-      - "Geophysics/Seismic/Geophysics_LAB_HGM_Worms.tif"
-      - "Geophysics/Seismic/Geophysics_Moho.tif"
-      - "Geophysics/Gravity/Geophysics_Satellite_Gravity.tif"
-      - "Geophysics/Gravity/Geophysics_Gravity_Bouguer.tif"
-      - "Geophysics/Gravity/Geophysics_Gravity_Bouguer_HGM.tif"
-      - "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM.tif"
-      - "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM_Worms.tif"
-      - "Geophysics/Magnetics/Geophysics_Mag_RTP_YTU.tif"
-      - "Geophysics/Magnetics/Geophysics_Mag_RTP_HGM_YTU.tif"
-      - "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM.tif"
-      - "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_Worms.tif"
-      - "Geophysics/Radiometric/Geophysics_Radiometric_Uranium.tif"
-      - "Geophysics/Radiometric/Geophysics_Radiometric_Potassium.tif"
-      - "Geophysics/Radiometric/Geophysics_Radiometric_Thorium.tif"
-      - "Geochemistry/Geochemistry_HUC_Mo_YTU.tif"
-      - "Geochemistry/Geochemistry_HUC_Sn_YTU.tif"
-      - "Geochemistry/Geochemistry_HUC_W_YTU.tif"
-      - "Geology/Geology_Lithology_Plutonic.tif"
-      - "Geology/Geology_Lithology_Carbonate.tif"
-      - "Labels/ytu_tungsten_skarn.tif"
-    raster_files_types:
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - float32
-      - bool
-      - bool
-      - bool
+      - path: "Geophysics/Seismic/Geophysics_LAB.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_LAB_HGM.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_LAB_HGM_Worms.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_Moho.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Satellite_Gravity.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_HGM.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM_Worms.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_YTU.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_HGM_YTU.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_Worms.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Radiometric/Geophysics_Radiometric_Uranium.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Radiometric/Geophysics_Radiometric_Potassium.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Radiometric/Geophysics_Radiometric_Thorium.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geochemistry/Geochemistry_HUC_Mo_YTU.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geochemistry/Geochemistry_HUC_Sn_YTU.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geochemistry/Geochemistry_HUC_W_YTU.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geology/Geology_Lithology_Plutonic.tif"
+        type: bool
+        outlier_removal: false
+        normalize: true
+      - path: "Geology/Geology_Lithology_Carbonate.tif"
+        type: bool
+        outlier_removal: false
+        normalize: true
+      - path: "Labels/ytu_tungsten_skarn.tif"
+        type: bool
+        outlier_removal: false
+        normalize: false

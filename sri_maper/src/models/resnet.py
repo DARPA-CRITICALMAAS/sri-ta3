@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import timm
-from typing import Literal
+from typing import Literal, Union
 
 from sri_maper.src import utils
 
@@ -12,13 +12,13 @@ class ResNet(nn.Module):
             num_input_channels: int = 12,
             num_output_classes: int = 1,
             dropout_rate: float = 0.5,
-            backbone_name: Literal["resnet18", "resnet10t"] = "resnet10t",
+            backbone_name: Literal["resnet18", "resnet10t"] = "resnet18",
             out_bias: bool = False,
     ) -> None:
         super().__init__()
 
         self.backbone = timm.create_model(
-            model_name=backbone_name, # oother option - "resnet10t"
+            model_name=backbone_name, # other option - "resnet10t"
             pretrained=False,
             in_chans=num_input_channels,
             features_only=True,
@@ -41,8 +41,15 @@ class ResNet(nn.Module):
         )
         self.frozen_embedding = None
 
-    def forward(self, x: torch.Tensor, row: torch.Tensor, col: torch.Tensor) -> torch.Tensor:
-        return self.classifier(self.backbone(x)[0])
+    def forward(
+            self, 
+            img: torch.Tensor,
+            row: torch.Tensor, 
+            col: torch.Tensor,
+            pca_matrix: Union[torch.Tensor, None] = None
+        ) -> torch.Tensor:
+        img_input = torch.einsum('ijkl,ijm->imkl', img, pca_matrix) if pca_matrix is not None else img
+        return self.classifier(self.backbone(img_input)[0])
 
     def activate_dropout(self):
         for m in self.classifier:

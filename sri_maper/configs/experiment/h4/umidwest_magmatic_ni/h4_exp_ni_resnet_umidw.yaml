@@ -1,25 +1,27 @@
 # @package _global_
 
 defaults:
-  - override /preprocess: mvt-h3-aoi-1-v3.yaml
+  - override /preprocess: h4_umidwest_magmatic_ni.yaml
   - override /model: resnet.yaml
-  - override /trainer: ddp # gpu
+  - override /trainer: gpu # ddp #
   - override /callbacks: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mvt", "resnet", "h3", "aoi-1", "v3"]
-task_name: "cmta3-classifier-mvt-h3-aoi-1-v3"
+tags: ["ni", "resnet", "h4", "upper-mid-west"]
+task_name: "cmta3-classifier-ni-h4-umidw"
 
 seed: 777
-enable_attributions: true
+enable_attributions: false
 
 data:
   window_size: 5
-  tif_dir: ${paths.data_dir}/H3/mvt-h3-aoi-1-v3 ### 18 layers
+  tif_dir: ${paths.data_dir}/H4/h4_umidwest_magmatic_ni ### 26 layers
   likely_neg_range: [0.1, 0.9]
   frac_train_split: 0.8
+  num_pca_components: null
+  in_pca_space: false
 
 model:
   optimizer:
@@ -28,7 +30,7 @@ model:
     weight_decay: 1e-2
   net:
     _target_: sri_maper.src.models.resnet.ResNet
-    num_input_channels: 18
+    num_input_channels: 26
     num_output_classes: 1
     dropout_rate: 0.5
   compile: false
@@ -47,7 +49,7 @@ trainer:
 
 logger:
   wandb:
-    name: "resnet|lnr=${data.likely_neg_range}"
+    name: "resnet|lnr=${data.likely_neg_range}|fts=${data.frac_train_split}|pca=${data.num_pca_components}|in_pca_space=${data.in_pca_space}"
 
 callbacks:
   model_checkpoint:

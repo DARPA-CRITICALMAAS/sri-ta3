@@ -1,0 +1,114 @@
+_target_: sri_maper.src.data.preprocessing.generate_raster_stacks
+raster_stacks:
+  - raster_stack_path: ${data.tif_dir}/h4_umidwest_magmatic_ni_d${data.window_size}.tif
+    raster_files_path: ${paths.data_dir}/raster_libraries/h4_umidwest_magmatic_ni_raster_library
+    dilation_size: ${data.window_size}
+    raster_files: # 26 evidence layers
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/CEUS_MAG_DRTP_TDR_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/CEUS_MAG_TMAG_AAS_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/CEUS_MAG_DRTP_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_HGM_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_LOGAnalyticSignal_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/CEUS_MAG_DRTP_HD_TDR_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/CEUS_GRAV_Isostatic_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Satellite_Gravity_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/CEUS_GRAV_RI_1VD_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/CEUS_GRAV_RI_HD_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/CEUS_GRAV_RI_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/CEUS_GRAV_RI_HD_1VD_CEUSSSC_R0_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_92km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_9km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_48km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_30km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_15km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_Moho_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_LAB_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_LAB_HGM_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_LAB_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Labels/mag_ni_deposit_clipped.tif"
+        type: bool
+        outlier_removal: false
+        normalize: false

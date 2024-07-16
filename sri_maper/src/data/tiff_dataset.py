@@ -15,6 +15,8 @@ import torch
 from imblearn.over_sampling import RandomOverSampler
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KDTree
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
 
 from sri_maper.src import utils
 
@@ -35,16 +37,25 @@ class TiffDataset(Dataset):
         valid_patches: Union[np.ndarray, None] = None,
         window_size: int = 33,
         stage: Union[np.ndarray, None] = None,
+        num_pca_components: int = None,
+        pca_matrices: Union[np.ndarray, None] = None,
     ):
         # sets object variables
         self.window_size = window_size
         self.stage = stage
+        self.num_pca_components = num_pca_components
 
         # loads tif files in MP compatible format
         self.tif_files, self.tif_data, self.tif_tags, self.tif_meta = self._load_tif_files(tif_dir, tif_files, tif_data, tif_tags, tif_meta)
 
         # loads VALID patches within all tiffs of dataset
         self.valid_patches = self._load_valid_patches(self.tif_files, window_size) if valid_patches is None else valid_patches
+
+        # load PCA matrices if it exists, otherwise generate them
+        if num_pca_components is None:
+            self.pca_matrices = None
+        else:
+            self.pca_matrices = self._load_pca_matrices(self.tif_files, self.tif_data, self.tif_tags, num_pca_components) if pca_matrices is None else pca_matrices
 
     def _load_tif_files(self, tif_dir, tif_files, tif_data, tif_tags, tif_meta):
         # sets List[str] of tif files
@@ -82,6 +93,28 @@ class TiffDataset(Dataset):
         # returns valid patches of ALL tiffs in dataset
         return np.vstack(ds_valid_patches)
 
+    def _load_pca_matrices(self, tif_files, tif_data, tif_tags, num_pca_components):
+        pca_matrices = []
+        for tif_idx, tif_file in  enumerate(tif_files):
+            # loads or generates PCA matrix
+            pca_matrix_file = Path(tif_file).parent / Path(Path(tif_file).name.split(".")[0]+f"_pca{num_pca_components}_matrix.npy")
+            try:
+                # check if PCA matrix already exists
+                log.info(f"Loading PCA matrix.")
+                pca_matrix = np.load(pca_matrix_file)
+            except FileNotFoundError:
+                # if not, generate PCA matrix
+                log.warning(f"PCA matrix not found. No file: {pca_matrix_file}. Generating.")
+                pca_matrix = self._generate_pca_matrix(tif_data,
+                                                        tif_idx,
+                                                        num_pca_components,
+                                                        out_png=True,
+                                                        output_path=Path(tif_file).parent / Path(Path(tif_file).name.split(".")[0]+f"_pca{num_pca_components}_matrix.png"),
+                                                        raster_names=tif_tags)
+                np.save(pca_matrix_file, pca_matrix)
+            pca_matrices.append(pca_matrix)
+        return np.array(pca_matrices)
+
     @staticmethod
     def _generate_valid_patches(tif_file, window_size):
         with rio_open(tif_file, "r") as tif:
@@ -109,6 +142,37 @@ class TiffDataset(Dataset):
 
         return valid_patches
 
+    @staticmethod
+    def _generate_pca_matrix(tif_data, tif_idx, num_pca_components, out_png=False, output_path=None, raster_names=None):
+        # data is a numpy array of shape (num_features, width, height)
+        data = tif_data[tif_idx][:-1,:,:] # exclude the label raster data/feature
+        data = data.flatten(start_dim=1).transpose(0,1).numpy()
+        data = data[~np.isnan(data).any(axis=1)] # remove rows with NaNs
+        pca = PCA(n_components=num_pca_components, svd_solver='full')
+        _ = pca.fit_transform(data)
+        transformation_matrix = pca.components_
+
+        if out_png:
+            fig, ax = plt.subplots(figsize=(transformation_matrix.shape[1]/2, transformation_matrix.shape[0]))
+            im = ax.imshow(transformation_matrix, cmap='bwr', interpolation='nearest')
+
+            # Change the axis marks
+            ax.set_yticks(np.arange(0, transformation_matrix.shape[0]), np.arange(1, transformation_matrix.shape[0] + 1))
+            # ax.set_xticks(np.arange(0, transformation_matrix.shape[1]), np.arange(1, transformation_matrix.shape[1] + 1))
+            raster_names_list = list(dict(sorted(raster_names.items(), key=lambda item: int(item[1]))))[:-1]
+            ax.set_xticks(np.arange(0, transformation_matrix.shape[1]), raster_names_list)
+            ax.xaxis.tick_top()
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=60, ha='left', fontsize=7)
+
+            # insert the values into output matrix
+            for i in range(transformation_matrix.shape[0]):
+                for j in range(transformation_matrix.shape[1]):
+                    text = ax.text(j, i, np.around(transformation_matrix[i, j], decimals=2),
+                                    ha="center", va="center", color="k", fontsize=7)
+            plt.colorbar(im, shrink=0.5)
+            plt.savefig(output_path)
+        return transformation_matrix.T
+
     def __len__(self):
         return self.valid_patches.shape[0]
 
@@ -124,8 +188,7 @@ class TiffDataset(Dataset):
 
         lon = self.valid_patches[idx,-3]
         lat = self.valid_patches[idx,-2]
-        return patch, label, lon, lat, int(col + 0.5 + self.window_size//2), int(row + 0.5 + self.window_size//2) # produce map
-
+        return patch, label, lon, lat, int(col + 0.5 + self.window_size//2), int(row + 0.5 + self.window_size//2), (self.pca_matrices[source_tif] if self.pca_matrices is not None else -1) # produce map
 
 def validate_patches(chunk, window_size, tif_file):
     # creates MP friendly iterator that estimates run-time
@@ -156,7 +219,6 @@ def validate_patches(chunk, window_size, tif_file):
         records = np.empty(shape=(0,5))
 
     return records
-
 
 def spatial_cross_val_split(
     ds: Dataset,
@@ -198,6 +260,8 @@ def spatial_cross_val_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=test_valid_patches,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     val_valid_patches = ds_df[ds_df["group"] == val_set].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     val_ds = TiffDataset(
@@ -207,7 +271,9 @@ def spatial_cross_val_split(
         tif_meta=ds.tif_meta,
         window_size=ds.window_size,
         stage=ds.stage,
-        valid_patches=val_valid_patches
+        valid_patches=val_valid_patches,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     ds_valid_patches = ds_df[(ds_df["group"] != test_set) & (ds_df["group"] != val_set)].drop(columns=[f"{split_col}_bin","group"]).reset_index(drop=True).values
     ds = TiffDataset(
@@ -218,9 +284,10 @@ def spatial_cross_val_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_valid_patches,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     return ds, val_ds, test_ds
-
 
 def combine(ds1, ds2):
     ds1_df = pd.DataFrame(
@@ -245,6 +312,8 @@ def combine(ds1, ds2):
         window_size=ds1.window_size,
         stage=ds1.stage,
         valid_patches=ds_df.values,
+        num_pca_components=ds1.num_pca_components,
+        pca_matrices=ds1.pca_matrices
     )
     return ds
 
@@ -270,6 +339,8 @@ def random_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_train.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
 
     ds_valid = TiffDataset(
@@ -280,6 +351,8 @@ def random_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_valid.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
 
     ds_test = TiffDataset(
@@ -290,10 +363,11 @@ def random_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_test.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
 
     return ds_train, ds_valid, ds_test
-
 
 def random_proportionate_split(
     ds: Dataset,
@@ -316,6 +390,8 @@ def random_proportionate_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_p.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     ds_df_n = ds_df[ds_df["label"] == 0]
     ds_n = TiffDataset(
@@ -326,6 +402,8 @@ def random_proportionate_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_n.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
 
     ds_p_train, ds_p_valid, ds_p_test = random_split(ds_p, train_split, seed=seed)
@@ -387,6 +465,8 @@ def specified_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_p_train.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     ds_p_valid = TiffDataset(
         tif_files=ds.tif_files,
@@ -396,6 +476,8 @@ def specified_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_p_valid.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     ds_p_test = TiffDataset(
         tif_files=ds.tif_files,
@@ -405,6 +487,8 @@ def specified_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_p_notselected.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
 
     # make negative datasets
@@ -424,6 +508,8 @@ def specified_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_n_train.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     ds_n_valid = TiffDataset(
         tif_files=ds.tif_files,
@@ -433,6 +519,8 @@ def specified_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_n_valid.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     ds_n_test = TiffDataset(
         tif_files=ds.tif_files,
@@ -442,6 +530,8 @@ def specified_split(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_n_test.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
 
     ds_train = combine(ds_p_train, ds_n_train)
@@ -450,9 +540,6 @@ def specified_split(
 
     return ds_train, ds_valid, ds_test
 
-
-
-
 def pu_downsample(
     ds: Dataset,
     feature_extractor: Callable,
@@ -460,7 +547,20 @@ def pu_downsample(
     likely_neg_range: List[float] = [0.25,0.75],
     seed: int = 0,
     log_path: str = "",
+    in_pca_space: bool = False,
 ):
+    """Function to downsample the dataset using positive-unlabeled learning.
+
+    :params ds: The dataset to downsample.
+    :params feature_extractor: The feature extractor function.
+    :params multiplier: The multiplier for the number of negative samples. Defaults to `20`.
+    :params likely_neg_range: The range of likely negative samples. Defaults to `[0.25,0.75]`.
+    :params seed: The random seed. Defaults to `0`.
+    :params log_path: The path to store the log. Defaults to `""`.
+    :params in_pca_space: Whether to use PCA space for negative selection/downsampling. Defaults to `False`.
+
+    :return: The downsampled dataset.
+    """
     log.info("Using Likely Negative Downsampling!")
     ds_df = pd.DataFrame(
         data=ds.valid_patches,
@@ -478,10 +578,15 @@ def pu_downsample(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_p.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     p_feats = []
     for p_idx in range(len(ds_p)):
         p_patch = ds_p[p_idx][0]
+        pca_matrix = ds_p[p_idx][-1]
+        if in_pca_space and len(pca_matrix.shape) != 1:
+            p_patch = np.einsum('ijk,im->mjk', p_patch, pca_matrix)
         p_feats.append(feature_extractor(p_patch))
     # prepares unlabeled dataset
     ds_df_u = ds_df[ds_df["label"] == 0]
@@ -494,10 +599,15 @@ def pu_downsample(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df_u.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     u_feats = []
     for u_idx in range(len(ds_u)):
         u_patch = ds_u[u_idx][0]
+        pca_matrix = ds_u[u_idx][-1]
+        if in_pca_space and len(pca_matrix.shape) != 1:
+            u_patch = np.einsum('ijk,im->mjk', u_patch, pca_matrix)
         u_feats.append(feature_extractor(u_patch))
     # compute the distances between all positives and negatives
     np_samples = np.asarray(p_feats + u_feats)
@@ -528,6 +638,8 @@ def pu_downsample(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
     return ds
 
@@ -542,7 +654,7 @@ def balance_data(
     ds_df = pd.DataFrame(
         data=ds.valid_patches,
         index=np.arange(ds.valid_patches.shape[0]),
-        columns=["x","y","label","lon", "lat","source"]
+        columns=["x","y","label","lon","lat","source"]
     )
 
     if downsample:
@@ -567,10 +679,11 @@ def balance_data(
         window_size=ds.window_size,
         stage=ds.stage,
         valid_patches=ds_df.values,
+        num_pca_components=ds.num_pca_components,
+        pca_matrices=ds.pca_matrices
     )
 
     return ds
-
 
 def filter_by_bounds(ds):
     left, top = ds.tif_meta["transform"] * (0, 0)
@@ -581,7 +694,6 @@ def filter_by_bounds(ds):
     ds.valid_patches = ds.valid_patches[ds.valid_patches[:,4] < top]
     return ds
 
-
 def store_samples(ds, root_path, name, optional_col=None):
     log_str = f"Spatial cross val ouput: {name} pos - {ds.valid_patches[:,2].sum()}, {name} neg - {len(ds)-ds.valid_patches[:,2].sum()}."
     log.info(log_str)
@@ -589,9 +701,8 @@ def store_samples(ds, root_path, name, optional_col=None):
     ds_df = pd.DataFrame(
         data=ds.valid_patches,
         index=np.arange(ds.valid_patches.shape[0]),
-        columns=["x","y","label","lon", "lat","source"]
+        columns=["x","y","label","lon","lat","source"]
     )
     if optional_col is not None:
         ds_df[optional_col["name"]] = optional_col["values"]
     ds_df.to_csv(file_path, index=False)
-

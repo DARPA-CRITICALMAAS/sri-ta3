@@ -19,6 +19,8 @@ data:
   window_size: 5
   tif_dir: ${paths.data_dir}/H3/mvt-smidcont
   likely_neg_range: [0.3, 0.6]
+  num_pca_components: null
+  in_pca_space: false
 
 model:
   net:
@@ -27,7 +29,7 @@ model:
       _target_: sri_maper.src.models.mae_vit.MAE_ViT
       image_size: ${data.window_size}
       patch_size: 1
-      input_dim: 25
+      input_dim: 25 # if want to use PCA (i.e., num_pca_components is not null), set it to num_pca_components
       enc_dim: 256
       encoder_layer: 6
       encoder_head: 8

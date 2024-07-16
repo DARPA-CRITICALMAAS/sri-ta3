@@ -1,4 +1,4 @@
-from typing import Optional, List, Tuple
+from typing import Optional, List, Union
 
 import torch
 import torch.nn.functional as F
@@ -58,12 +58,20 @@ class CLSClassifier(torch.nn.Module):
             torch.nn.Linear(backbone_net.enc_dim//4, 1, bias=out_bias)
         )
 
-    def forward(self, img, col: torch.Tensor, row: torch.Tensor):
+    def forward(
+            self, 
+            img: torch.Tensor,
+            col: torch.Tensor, 
+            row: torch.Tensor,
+            pca_matrix: Union[torch.Tensor, None] = None
+        ) -> torch.Tensor:
+
         # extracts features
         if self.frozen_embedding is not None:
             features = self.frozen_embedding[row, col]
         else:
-            features = self.frozen_backbone(img)[0][:,0,:]
+            img_input = torch.einsum('ijkl,ijm->imkl', img, pca_matrix) if pca_matrix is not None else img
+            features = self.frozen_backbone(img_input)[0][:,0,:]
         
         # classfies the CLS token features
         features = self.classifier(features)

@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Union
 
 import torch
 import torch.nn as nn
@@ -35,10 +35,17 @@ class ANN(nn.Module):
             torch.nn.Linear(num_input_channels//4, num_output_classes, bias=out_bias)
         )
         self.frozen_embedding = None
-
-    def forward(self, x: torch.Tensor, row: torch.Tensor, col: torch.Tensor) -> torch.Tensor:
-        x = x[:, :, self.image_size//2, self.image_size//2]
-        return self.classifier(x)
+    
+    def forward(
+            self, 
+            img: torch.Tensor,
+            row: torch.Tensor, 
+            col: torch.Tensor,
+            pca_matrix: Union[torch.Tensor, None] = None
+        ) -> torch.Tensor:
+        img_input = torch.einsum('ijkl,ijm->imkl', img, pca_matrix) if pca_matrix is not None else img
+        img_input = img_input[:, :, self.image_size//2, self.image_size//2]
+        return self.classifier(img_input)
 
     def activate_dropout(self):
         for m in self.classifier:
