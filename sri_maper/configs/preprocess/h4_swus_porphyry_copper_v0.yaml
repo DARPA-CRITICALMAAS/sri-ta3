@@ -1,0 +1,139 @@
+_target_: sri_maper.src.data.preprocessing.generate_raster_stacks
+raster_stacks:
+  - raster_stack_path: ${data.tif_dir}/h4_swus_porphyry_copper_d${data.window_size}.tif
+    raster_files_path: ${paths.data_dir}/raster_libraries/h4_swus_porphyry_copper_raster_library
+    dilation_size: ${data.window_size}
+    # 31 layers in _v0.yaml
+    raster_files:
+      # geochemistry
+      - path: "Geochemistry/Geochemistry_StrmSed_Cu_SBR_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geochemistry/Geochemistry_StrmSed_Mo_SBR_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geochemistry/Geochemistry_StrmSed_Zn_SBR_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      # geology
+      - path: "Geology/Geology_bge_rock_types_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geology/Geology_bge_all_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geology/Geology_bge_deposit_type_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geology/Geology_Faults_Proximity_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      # geophysics
+      - path: "Geophysics/Seismic/Geophysics_LAB_HGM_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_Moho_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_LAB_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Seismic/Geophysics_LAB_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_15km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_9km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/MT/Geophysics_MT2023_30km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Isostatic_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Isostatic_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Gravity/Geophysics_Gravity_Isostatic_HGM_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Radiometric/Geophysics_Radiometric_Thorium_HiLo_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Radiometric/Geophysics_Radiometric_Uranium_HiLo_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Radiometric/Geophysics_Radiometric_Potassium_HiLo_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_HiLo_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_HGM_HiLo_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_VD_HiLo_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      - path: "Remote_Sensing/All_Alteration_Polygons_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: true
+      # labels
+      - path: "Labels/porphyry_copper_sites_swus_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: false

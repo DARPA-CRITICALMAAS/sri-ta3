@@ -1,0 +1,142 @@
+_target_: sri_maper.src.data.preprocessing.generate_raster_stacks
+raster_stacks:
+  - raster_stack_path: ${data.tif_dir}/h4_natl_ree_v0_d${data.window_size}.tif
+    raster_files_path: ${paths.data_dir}/raster_libraries/h4_natl_ree_raster_library
+    dilation_size: ${data.window_size}
+    # 31 layers in _v0.yaml
+    raster_files:
+      # geology
+      - path: "ta1_rock_proximity.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geology_NLPE_bge_rock_types.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      # geophysics
+      - path: "Geophysics_LAB_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_LAB_HGM_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_LAB_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Moho_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Satellite_Gravity_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Bouguer_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Bouguer_HGM_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Bouguer_Up30km_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Bouguer_Up30km_HGM_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Bouguer_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Bouguer_Up30km_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Isostatic_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Isostatic_HGM_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Gravity_Isostatic_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_RTP_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_RTP_HGM_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_RTP_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_RTP_VD_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_RTP_Long-Wavelength_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_RTP_Long-Wavelength_HGM_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_RTP_Long-Wavelength_HGM_Worms_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Mag_LOGAnalyticSignal_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_MT2023_9km_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_MT2023_15km_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_MT2023_30km_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_MT2023_48km_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_MT2023_92km_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Radiometric_Uranium_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Radiometric_Potassium_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      - path: "Geophysics_Radiometric_Thorium_clipped.tif"
+        type: float32
+        outlier_removal: true
+        normalize: true
+      # labels
+      - path: "merged_dedup_ree_sites_clipped.tif"
+        type: float32
+        outlier_removal: false
+        normalize: false

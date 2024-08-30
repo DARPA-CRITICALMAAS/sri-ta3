@@ -1,0 +1,58 @@
+# @package _global_
+
+defaults:
+  - override /preprocess: h4_umidwest_magmatic_ni_v2.yaml
+  - override /model: maevit_classifier.yaml
+  - override /trainer: ddp
+  - override /callbacks: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["ViT",  "umidwest", "mamanico", "v2"]
+task_name: "h4-cmta3-classifier-mamanico-upmidwest"
+
+seed: 777
+enable_attributions: false
+
+data:
+  window_size: 5
+  tif_dir: ${paths.data_dir}/H4/h4_umidw_ni_v2
+  likely_neg_range: [0.1, 1.0]
+
+model:
+  net:
+    backbone_ckpt: null
+    backbone_net:
+      _target_: sri_maper.src.models.mae_vit.MAE_ViT
+      image_size: ${data.window_size}
+      patch_size: 1
+      input_dim: 29
+      enc_dim: 256
+      encoder_layer: 6
+      encoder_head: 8
+      dec_dim: 128
+      output_dim: ${model.net.backbone_net.input_dim}
+      decoder_layer: 2
+      decoder_head: 4
+      mask_ratio: 0.0
+    dropout_rate: [0.0, 0.25, 0.25]
+  smoothing: 0.3
+
+trainer:
+  min_epochs: 100
+  max_epochs: 100
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
+  val_check_interval: 0.5
+
+logger:
+  wandb:
+    name: "mae|v2|sm=${model.smoothing}|lnr=${data.likely_neg_range}|lr=${model.optimizer.lr}|M=${data.multiplier}"
+
+callbacks:
+  model_checkpoint:
+    monitor: val/auprc
+  early_stopping:
+    monitor: val/auprc_best
