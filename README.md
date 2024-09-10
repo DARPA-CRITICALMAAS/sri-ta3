@@ -85,6 +85,8 @@ conda activate [VIRTUAL_ENV_NAME]
 # clone repo source code locally
 git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
 cd sri-ta3
+# sets environment variables
+source project_vars.sh
 # installs from source code
 python3 -m pip install -e .
 ```
