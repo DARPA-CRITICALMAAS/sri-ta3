@@ -112,24 +112,24 @@ def dilate_raster(
     Fill NoData values in a raster using rasterio's fillnodata function.
 
     Parameters:
-    - input_path (str): Path to the input raster file.
-    - output_path (str): Path to save the filled raster.
-    - max_search_distance (int): Maximum search distance for interpolation (default is 100).
+    - src_raster_path (str): Path to the input raster file.
+    - dst_raster_path (str): Path to save the filled raster.
+    - dilation_size (int): Maximum search distance for interpolation (default is 100).
     - smoothing_iterations (int): Number of smoothing iterations (default is 0).
     """
     with rasterio.open(src_raster_path) as src:
-        data = src.read(1)  # Read the first band
+        data = src.read(1, masked=True)  # Read the first band
         filled_data = rasterio.fill.fillnodata(
-            data, 
-            mask=data != src.nodata,
+            data,
             max_search_distance=dilation_size,
             smoothing_iterations=smoothing_iterations
         )
         
         # Copy metadata and write the filled raster
         profile = src.profile
-        with rasterio.open(dst_raster_path, 'w', **profile) as dst:
-            dst.write(filled_data, 1)
+    
+    with rasterio.open(dst_raster_path, 'w', **profile) as dst:
+        dst.write(filled_data, 1)
 
 
 def clip_raster(
@@ -400,7 +400,7 @@ def preprocess_raster(
     dilate_raster( # dilate
         src_raster_path=clipped_file, 
         dst_raster_path=dilated_file,
-        dilation_size = window_size,
+        dilation_size=window_size,
     )
     remove_outliers_tukey_raster(
         src_raster_path=dilated_file,
@@ -474,7 +474,7 @@ def preprocess_vector(
     dilate_raster(
         src_raster_path=clipped_file, 
         dst_raster_path=dilated_file,
-        dilation_size = window_size,
+        dilation_size=window_size,
     )
     remove_outliers_tukey_raster(
         src_raster_path=dilated_file,
