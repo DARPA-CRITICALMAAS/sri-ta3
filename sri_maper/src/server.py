@@ -26,34 +26,36 @@ if __name__ == "__main__":
     if args.event_id:
         event_id = args.event_id
         
+        print("Querying CDR for event.")
         model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
 
+        print("Parsing CDR event payload.")
         model_event_obj = utils.parse_event_payload_result(model_event_json)
 
+        print("Downloading evidence layers.")
         evidence_layer_paths = utils.download_evidence_layers(model_event_obj)
 
+        print("Generating AOI geopackage.")
         aoi_geopkg_path = utils.create_aoi_geopkg(model_event_obj)
 
+        print("Preprocessing evidence layers.")
         processed_evidence_layer_paths = preprocess_evidence_layers(
             event_obj=model_event_obj,
             layers=evidence_layer_paths,
             aoi=aoi_geopkg_path,
         )
 
+        # process label raster -> need to query CDR, filter CSV using gdf, then rasterize
+        # after have all evidence and label layers, create raster stack
+        # then create the preprocess YAML
+        # then run pretrain
+        # then run train
+        # then generate map
+        # then upload map results to CDR
+        # then upload processed evidence layers to CDR (not labels!)
+
         import pdb
         pdb.set_trace()
-
-        # set the destination parameters: crs, resolution, nodata
-        dst_params = {}
-        dst_params['aoi_path'] = aoi_geopkg_path
-        dst_params['crs'] = data["cma"]["crs"]
-        dst_params['res_x'] = data["cma"]["resolution"][0]
-        dst_params['res_y'] = data["cma"]["resolution"][1]
-        dst_params['nodata'] = -999999999.0
-        dst_params['description'] = data["cma"]["description"].lower().replace(" ", "_")
-
-        pev_lyrs_path = data_path / Path(event_obj.model_run_id) / Path("processed_evidence_layers")
-        pev_lyrs_path.mkdir(parents=True, exist_ok=True)
 
         # utils.run_ta3_pipeline(
         #     ProspectModelMetaData(

@@ -11,64 +11,156 @@ import rasterio
 import subprocess
 import fiona
 from sri_maper.src import utils
-from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import matplotlib.pyplot as plt
+from scipy.ndimage import distance_transform_edt
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
 
 log = utils.get_pylogger(__name__)
 
 
+def format_nodata_crs(
+    src_raster_path: Path,
+    dst_raster_path: Path,
+    default_crs: str = 'EPSG:4326',
+    default_nodata: float = np.nan,
+):
+    """
+    Load a raster, update NoData values to NaN, and save the modified raster.
+
+    Parameters:
+    - input_raster_path (str): Path to the input raster file.
+    - output_raster_path (str): Path to save the output raster with NoData updated to NaN.
+    """
+    with rasterio.open(src_raster_path) as src:
+        raster_data = src.read(1)
+        nodata_value = src.nodata
+        CRS = src.crs if src.crs is not None else default_crs
+        if nodata_value is not None:
+            raster_data = np.where(raster_data == nodata_value, default_nodata, raster_data)
+        else:
+            raise Exception(f"Raster no data value is None: {src_raster_path}")
+
+        metadata = src.meta
+        metadata.update(dtype=rasterio.float32, nodata=default_nodata, crs=CRS)
+
+    # Save the modified raster to the output path
+    with rasterio.open(dst_raster_path, 'w', **metadata) as dst:
+        dst.write(raster_data.astype(rasterio.float32), 1)
+
+
 def warp_raster(
-    src_raster_path: str,
-    dst_raster_path: str,
+    src_raster_path: Path,
+    dst_raster_path: Path,
     dst_crs: str = 'ESRI:102008',
-    dst_nodata: float = -999999999.0,
+    dst_nodata: float = np.nan,
     dst_res_x: float = 500.0,
     dst_res_y: float = 500.0,
-    src_crs: Optional[str] = None,
+    resampling=rasterio.warp.Resampling.bilinear
 ):
-    print(f'Warping raster: {src_raster_path}')
-    cmd = ['gdalwarp', '-overwrite']
-    if src_crs is not None:
-        cmd += ['-s_srs', src_crs]
-    cmd += ['-t_srs', str(dst_crs), '-dstnodata', str(dst_nodata),
-    '-tr', str(dst_res_x), str(dst_res_y), '-r', 'bilinear', '-of', 'GTiff', src_raster_path, dst_raster_path
-    ]
-    subprocess.run(cmd, check=True)
+    """
+    Reproject a raster to a new CRS using rasterio.warp.reproject.
+
+    Parameters:
+    - src_raster_path (str): Path to the input raster file.
+    - dst_raster_path (str): Path to save the reprojected raster file.
+    - dst_crs (str or dict): The destination coordinate reference system.
+    - dst_nodata (float or int): NoData value for the output raster.
+    - dst_res_x, dst_res_y (float): Resolution of the output raster.
+    - resampling (rasterio.warp.Resampling): Resampling method to use.
+    """
+    with rasterio.open(src_raster_path) as src:
+        # Calculate transform and dimensions for output raster
+        transform, width, height = rasterio.warp.calculate_default_transform(
+            src.crs, dst_crs, src.width, src.height, *src.bounds, 
+            resolution=(dst_res_x, dst_res_y) if dst_res_x and dst_res_y else None
+        )
+        
+        # Update metadata for the output raster
+        metadata = src.meta.copy()
+        metadata.update({
+            'crs': dst_crs,
+            'transform': transform,
+            'width': width,
+            'height': height,
+            'nodata': dst_nodata,
+            'dtype': src.dtypes[0]
+        })
+
+        # Reproject and write to the output file
+        with rasterio.open(dst_raster_path, 'w', **metadata) as dst:
+            for i in range(1, src.count + 1):
+                rasterio.warp.reproject(
+                    source=rasterio.band(src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=dst_crs,
+                    resampling=resampling,
+                    dst_nodata=dst_nodata
+                )
 
 
 def dilate_raster(
-    src_raster_path: str,
-    dst_raster_path: str,
-    dilation_size: int = 50,
+    src_raster_path: Path,
+    dst_raster_path: Path,
+    dilation_size=100, 
+    smoothing_iterations=0
 ):
-    print(f'Dilating raster: {src_raster_path}')
-    cmd = [
-    'gdal_fillnodata.py', src_raster_path, dst_raster_path, '-md', str(dilation_size), '-b', '1', '-of', 'GTiff'
-    ]
-    subprocess.run(cmd, check=True)
+    """
+    Fill NoData values in a raster using rasterio's fillnodata function.
+
+    Parameters:
+    - input_path (str): Path to the input raster file.
+    - output_path (str): Path to save the filled raster.
+    - max_search_distance (int): Maximum search distance for interpolation (default is 100).
+    - smoothing_iterations (int): Number of smoothing iterations (default is 0).
+    """
+    with rasterio.open(src_raster_path) as src:
+        data = src.read(1)  # Read the first band
+        filled_data = rasterio.fill.fillnodata(
+            data, 
+            mask=data != src.nodata,
+            max_search_distance=dilation_size,
+            smoothing_iterations=smoothing_iterations
+        )
+        
+        # Copy metadata and write the filled raster
+        profile = src.profile
+        with rasterio.open(dst_raster_path, 'w', **profile) as dst:
+            dst.write(filled_data, 1)
 
 
 def clip_raster(
-    src_raster_path: str,
-    dst_raster_path: str,
-    aoi_path: str,
-    dst_crs: str = 'ESRI:102008',
-    dst_nodata: float = -999999999.0,
-    dst_res_x: float = 500.0,
-    dst_res_y: float = 500.0,
+    src_raster_path: Path,
+    dst_raster_path: Path,
+    aoi_path: Path,
 ):
-    print(f'Clipping raster: {src_raster_path} w/r to AOI: {aoi_path}')
-    gdf = gpd.read_file(aoi_path)
-    layers = fiona.listlayers(aoi_path)
-    cmd = [
-        'gdalwarp', '-overwrite', '-t_srs', str(dst_crs),
-        '-te', str(gdf.bounds.minx[0]), str(gdf.bounds.miny[0]), str(gdf.bounds.maxx[0]), str(gdf.bounds.maxy[0]), '-te_srs', gdf.crs.to_string(),
-        '-of', 'GTiff', '-tr', str(dst_res_x), str(dst_res_y), '-tap', '-cutline', aoi_path, '-cl', layers[0], '-dstnodata', str(dst_nodata),
-        src_raster_path, dst_raster_path
-    ]
-    subprocess.run(cmd, check=True)
+    """
+    Clip a raster to a region of interest using a shapefile.
+
+    Parameters:
+    - input_raster (str): Path to the input raster file.
+    - shapefile (str): Path to the shapefile defining the region of interest.
+    - output_raster (str): Path to save the clipped raster.
+    """
+    # Read the shapefile
+    shapes = gpd.read_file(aoi_path)
+    
+    # Open the raster file
+    with rasterio.open(src_raster_path) as src:
+        # Clip the raster with the shapes from the shapefile
+        out_image, out_transform = rasterio.mask.mask(src, shapes.geometry, crop=True)
+        out_meta = src.meta.copy()
+        out_meta.update({"driver": "GTiff", 
+                         "height": out_image.shape[1], 
+                         "width": out_image.shape[2], 
+                         "transform": out_transform})
+
+    # Save the clipped raster
+    with rasterio.open(dst_raster_path, "w", **out_meta) as dest:
+        dest.write(out_image)
 
 
 def remove_outliers_tukey_raster(
@@ -142,51 +234,104 @@ def scale_raster(
 
 
 def warp_vector(
-    src_vector_path: str,
-    dst_vector_path: str,
+    src_vector_path: Path,
+    dst_vector_path: Path,
     dst_crs: str = 'ESRI:102008',
 ):
-    print(f'Warping vector: {src_vector_path}')
-    cmd = [
-        'ogr2ogr', '-f', 'ESRI Shapefile', '-t_srs', dst_crs, dst_vector_path, src_vector_path
-    ]
-    subprocess.run(cmd, check=True)
+    """
+    Reproject a vector file to a different CRS.
+
+    Parameters:
+    - input_vector (str): Path to the input vector file.
+    - output_vector (str): Path to save the reprojected vector file.
+    - crs (str or dict): The target CRS (e.g., 'EPSG:4326' or {'init': 'epsg:4326'}).
+    """
+    # Read the vector file
+    gdf = gpd.read_file(src_vector_path)
+    
+    # Reproject to the target CRS
+    gdf = gdf.to_crs(dst_crs)
+    
+    # Save the reprojected vector
+    gdf.to_file(dst_vector_path, driver='ESRI Shapefile')
 
 
 def vector_to_raster(
-    src_vector_path: str,
-    dst_raster_path: str,
+    src_vector_path: Path,
+    dst_raster_path: Path,
     dst_res_x: float = 500.0,
     dst_res_y: float = 500.0,
-    dst_nodata: float = -999999999.0,
-    attribute: str = None,
-    burn_value: Optional[float] = 1.0,
+    burn_value: float = 1.0,
+    fill_value: float = None,
+    dst_nodata: float = np.nan,
 ):
-    print(f'Converting vector to raster: {src_vector_path}')
-    layers = fiona.listlayers(src_vector_path)
-    src_layer_name = layers[0]
-    cmd = ['gdal_rasterize', '-l', src_layer_name]
-    if attribute is not None:
-        cmd += ['-a', attribute]
-    else:
-        cmd += ['-burn', str(burn_value)]
-    cmd += ['-tr', str(dst_res_x), str(dst_res_y),
-        '-a_nodata', str(dst_nodata), '-ot', 'Float32', '-of', 'GTiff', src_vector_path, dst_raster_path]
-    subprocess.run(cmd, check=True)
+    """
+    Rasterize a vector file to a raster with specific resolution.
+
+    Parameters:
+    - vector_path (str): Path to the input vector file.
+    - output_raster (str): Path to save the output raster file.
+    - x_res (float): Desired x resolution of the output raster.
+    - y_res (float): Desired y resolution of the output raster.
+    - burn_value (int/float): Value to burn in the raster (default is 1).
+    """
+    # Read the vector file
+    gdf = gpd.read_file(src_vector_path)
+    
+    # Get bounds and calculate transform
+    minx, miny, maxx, maxy = gdf.total_bounds
+    width = int((maxx - minx) / dst_res_x)
+    height = int((maxy - miny) / dst_res_y)
+    transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, width, height)
+    
+    # Rasterize the geometries
+    shapes = ((geom, burn_value) for geom in gdf.geometry)
+    raster = rasterio.features.rasterize(
+        shapes=shapes, 
+        out_shape=(height, width), 
+        transform=transform,
+        fill=fill_value,
+    )
+    
+    # Write to output raster
+    with rasterio.open(dst_raster_path, 'w', driver='GTiff', height=height, width=width, count=1,
+            dtype=rasterio.float32, crs=gdf.crs, transform=transform, nodata=dst_nodata) as dst:
+        dst.write(raster, 1)
 
 
 def proximity_raster(
-    src_raster_path: str,
-    dst_raster_path: str,
+    src_raster_path: Path,
+    dst_raster_path: Path,
     src_burn_value: float = 1.0,
-    dst_nodata: float = -999999999.0
 ):
-    print(f'Calculating proximity raster: {src_raster_path}')
-    cmd = [
-    'gdal_proximity.py', '-srcband', '1', '-distunits', 'GEO', '-values', str(src_burn_value),
-    '-nodata', str(dst_nodata), '-ot', 'Float32', '-of', 'GTiff', src_raster_path, dst_raster_path
-    ]
-    subprocess.run(cmd, check=True)
+    """
+    Compute pixel proximity raster to values from existing raster.
+
+    Parameters:
+    - src_raster_path (str): Path to the input raster file.
+    - dst_raster_path (str): Path to save the output raster file.
+    - src_burn_value (float): Value from source raster to compute proximities (default is 1).
+    """
+    # Open the source raster
+    with rasterio.open(src_raster_path) as src:
+        # Read the first band
+        data = src.read(1)
+
+        # Create a mask of where the burn value exists
+        burn_value_mask = data == src_burn_value
+
+        # Calculate the proximity using the distance transform
+        proximity = distance_transform_edt(~burn_value_mask, sampling=src.res)
+
+        # Update metadata for the output raster
+        dst_meta = src.meta.copy()
+        dst_meta.update({
+            'dtype': 'float32'
+        })
+
+        # Write the proximity raster to the destination path
+        with rasterio.open(dst_raster_path, 'w', **dst_meta) as dst:
+            dst.write(proximity.astype(np.float32), 1)
 
 
 def fill_nodata_raster(
@@ -208,7 +353,7 @@ def preprocess_evidence_layers(
     aoi: Path,
 ):
     pev_lyr_paths = []
-    for layer in layers:
+    for layer in tqdm(layers):
         if layer.suffix == ".tif":
             pev_lyr_path = preprocess_raster(event_obj, layer, aoi)
         elif layer.suffix == ".zip":
@@ -221,41 +366,44 @@ def preprocess_raster(
     event_obj: ProspectModelMetaData,
     layer: Path,
     aoi: Path,
-    dilation_px: int = 50,
+    imputation_size: int = 50,
+    window_size: int = 5,
 ):
+    formatted_file = layer.parent / (layer.stem +"_formatted" + layer.suffix)
     warped_file = layer.parent / (layer.stem +"_warped" + layer.suffix)
     imputed_file = layer.parent / (layer.stem +"_imputed" + layer.suffix)
     clipped_file = layer.parent / (layer.stem +"_clipped" + layer.suffix)
+    dilated_file = layer.parent / (layer.stem +"_dilated" + layer.suffix)
     olr_file = layer.parent / (layer.stem +"_olr" + layer.suffix)
     scaled_file = layer.parent / (layer.stem +"_processed" + layer.suffix)
-    with rasterio.open(layer) as ras: 
-        nodata = ras.nodata
-        CRS = ras.crs if ras.crs is not None else 'EPSG:4326'
-    warp_raster(
-        src_raster_path = str(layer), 
-        dst_raster_path = str(warped_file),
-        dst_crs = event_obj.cma.crs, 
-        dst_nodata = nodata,
-        dst_res_x = event_obj.cma.resolution[0], 
-        dst_res_y = event_obj.cma.resolution[1],
-        src_crs = CRS,
+    format_nodata_crs(
+        src_raster_path=layer,
+        dst_raster_path=formatted_file,
     )
-    dilate_raster(
-        src_raster_path = warped_file, 
-        dst_raster_path = imputed_file,
-        dilation_size = dilation_px,
+    warp_raster(
+        src_raster_path=formatted_file, 
+        dst_raster_path=warped_file,
+        dst_crs=event_obj.cma.crs,
+        dst_res_x=event_obj.cma.resolution[0], 
+        dst_res_y=event_obj.cma.resolution[1],
+    )
+    dilate_raster( # impute
+        src_raster_path=warped_file, 
+        dst_raster_path=imputed_file,
+        dilation_size=imputation_size,
     )
     clip_raster(
-        src_raster_path = imputed_file, 
-        dst_raster_path = clipped_file, 
+        src_raster_path=imputed_file, 
+        dst_raster_path=clipped_file, 
         aoi_path = str(aoi),
-        dst_crs = event_obj.cma.crs, 
-        dst_nodata = nodata,
-        dst_res_x = event_obj.cma.resolution[0], 
-        dst_res_y = event_obj.cma.resolution[1],
+    )
+    dilate_raster( # dilate
+        src_raster_path=clipped_file, 
+        dst_raster_path=dilated_file,
+        dilation_size = window_size,
     )
     remove_outliers_tukey_raster(
-        src_raster_path=clipped_file,
+        src_raster_path=dilated_file,
         dst_raster_path=olr_file,
     )
     scale_raster(
@@ -288,49 +436,56 @@ def preprocess_vector(
     event_obj: ProspectModelMetaData,
     layer: Path,
     aoi: Path,
+    window_size: int = 5,
 ):
-    shp_files = find_shapefiles(layer.parent / layer.stem)
-    if len(shp_files) > 1 or len(shp_files) == 0: raise Exception(f"Cannot process vector file {layer}.")
-
-    warped_file = layer.parent / (layer.stem +"_warped" + layer.suffix)
-    imputed_file = layer.parent / (layer.stem +"_imputed" + layer.suffix)
-    clipped_file = layer.parent / (layer.stem +"_clipped" + layer.suffix)
-    olr_file = layer.parent / (layer.stem +"_olr" + layer.suffix)
-    scaled_file = layer.parent / (layer.stem +"_processed" + layer.suffix)
-
-    full_path = os.path.join(dirpath, filename)
-    warped_dir = os.path.join(dir_processed_path, full_path.split(dir_orig_path)[1].split('/')[1]+'_warped')
-    os.makedirs(warped_dir, exist_ok=True)
-    warped_file = os.path.join(warped_dir, full_path.split(dir_orig_path)[1].split('/')[1]+'_warped.shp')
-    rasterized_file = os.path.join(dir_processed_path, full_path.split(dir_orig_path)[1].split('/')[1]+'_rasterized.tif')
-    proximity_file = os.path.join(dir_processed_path, full_path.split(dir_orig_path)[1].split('/')[1]+'_proximity.tif')
-    clipped_file = os.path.join(dir_processed_path, full_path.split(dir_orig_path)[1].split('/')[1]+'_clipped.tif')
-
-    print(full_path)
-    # Reproject vector .shp file into desired CRS
+    # gets vector file path
+    shp_file = find_shapefiles(layer.parent / layer.stem)
+    if len(shp_file) > 1 or len(shp_file) == 0: raise Exception(f"Cannot process vector file {layer}.")
+    shp_file = Path(shp_file[0])
+    # prepares preprocessing file names
+    warped_shp_file = layer.parent / layer.stem / (shp_file.stem + "_warped" + shp_file.suffix)
+    rasterized_file = layer.parent / (layer.stem + "_rasterized.tif")
+    proximity_file = rasterized_file.parent / (rasterized_file.stem +"_proximity" + rasterized_file.suffix)
+    clipped_file = rasterized_file.parent / (rasterized_file.stem +"_clipped" + rasterized_file.suffix)
+    dilated_file = rasterized_file.parent / (rasterized_file.stem +"_dilated" + rasterized_file.suffix)
+    olr_file = rasterized_file.parent / (rasterized_file.stem +"_olr" + rasterized_file.suffix)
+    scaled_file = rasterized_file.parent / (rasterized_file.stem +"_processed" + rasterized_file.suffix)
     warp_vector(
-        src_vector_path = full_path, dst_vector_path = warped_file, dst_crs = dst_params['crs'],
+        src_vector_path = shp_file,
+        dst_vector_path = warped_shp_file,
+        dst_crs = event_obj.cma.crs,
     )
-    # Rasterize the reprojected .shp file
     vector_to_raster(
-        src_vector_path = warped_file, dst_raster_path = rasterized_file,
-        dst_res_x = dst_params['res_x'], dst_res_y = dst_params['res_y'],
-        dst_nodata = dst_params['nodata'], attribute = None, burn_value = 1.0,
+        src_vector_path=warped_shp_file, 
+        dst_raster_path=rasterized_file,
+        dst_res_x = event_obj.cma.resolution[0], 
+        dst_res_y = event_obj.cma.resolution[1],
+        fill_value=np.nan
     )
-    # Generate proximity raster for the rasterized ^ file
     proximity_raster(
-        src_raster_path = rasterized_file, dst_raster_path = proximity_file,
-        src_burn_value = 1.0, dst_nodata = dst_params['nodata']
+        src_raster_path=rasterized_file,
+        dst_raster_path=proximity_file,
     )
-    # Clip proximity raster to aoi
     clip_raster(
-        src_raster_path = proximity_file, dst_raster_path = clipped_file, aoi_path = aoi_output_path,
-        dst_crs = dst_params['crs'], dst_nodata = dst_params['nodata'],
-        dst_res_x = dst_params['res_x'], dst_res_y = dst_params['res_y'],
+        src_raster_path=proximity_file, 
+        dst_raster_path=clipped_file, 
+        aoi_path = str(aoi),
     )
-    shutil.rmtree(warped_dir)
-    os.remove(rasterized_file)
-    os.remove(proximity_file)
+    dilate_raster(
+        src_raster_path=clipped_file, 
+        dst_raster_path=dilated_file,
+        dilation_size = window_size,
+    )
+    remove_outliers_tukey_raster(
+        src_raster_path=dilated_file,
+        dst_raster_path=olr_file,
+    )
+    scale_raster(
+        src_raster_path=olr_file,
+        dst_raster_path=scaled_file,
+        scaling_type="standard"
+    )
+    return scaled_file
 
 
 def generate_raster_stacks(raster_stacks):
@@ -366,38 +521,7 @@ def generate_raster_stack(
     :return: None
     :rtype: None
     """
-    # loads the individual rasters
-    rasters = load_rasters(raster_files, raster_files_path)
-    rasters_data = [raster.read(1, masked=True) for raster in rasters]
-    for raster_data in rasters_data: np.ma.set_fill_value(raster_data, np.nan) # changing masked fill_value from -1e9 to NaN
-
-    # dilation of all the rasters by window_size pixels
-    label_msk = np.isnan(rasters_data[-1])
-    dilated_rasters_data = [fillnodata(raster_data, max_search_distance=dilation_size) for raster_data in rasters_data]
-    dilated_rasters_data[-1][label_msk & ~np.isnan(dilated_rasters_data[-1])] = 0.
-
-    # creating list of raster shapes, dilated raster masks, and overall dilated mask
-    raster_shapes = [dilated_raster_data.shape for dilated_raster_data in dilated_rasters_data]
-
-    # creates the raster dataframe
-    raster_df = pd.DataFrame()
-    for raster_file, dilated_raster_data in zip(raster_files, dilated_rasters_data):
-        raster_df[f"{raster_file.path}"] = dilated_raster_data.flatten()
-    raster_df = raster_df.replace(-1.0e+09, np.nan) # changing -1.0e+09 to NaN
-    raster_df.loc[raster_df.isnull().any(axis=1), :] = np.nan # if any value in a row is NaN, set all values in that row to NaN
-
-    # raster_df_bu = raster_df.copy()
-    new_rasters_data = []
-    for i, raster_file in tqdm(enumerate(raster_files)):
-        raster_name = raster_file.path
-        # removes outliers and normalizes
-        if raster_file.outlier_removal: # and raster_file.type != "bool":
-            raster_df = tukey_remove_outliers(raster_df, raster_name)
-        if raster_file.normalize: # and raster_file.type != "bool":
-            raster_df[f"{raster_name}"] = StandardScaler().fit_transform(raster_df[f"{raster_name}"].values.reshape(-1,1)).squeeze(-1)
-        # extracts masked numpy arrays from the from dataframe
-        new_raster_data = raster_df[f"{raster_name}"].values.reshape(raster_shapes[i])
-        new_rasters_data.append(new_raster_data)
+    raise NotImplementedError
 
     # generates and saves raster stack
     raster_stack_meta = rasters[0].meta
