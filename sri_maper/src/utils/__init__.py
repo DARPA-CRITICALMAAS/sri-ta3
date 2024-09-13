@@ -21,5 +21,6 @@ from sri_maper.src.utils.cdr_utils import (
     parse_event_payload_result,
     download_evidence_layers,
     create_aoi_geopkg,
+    download_deposits,
     CDR_Settings
 )

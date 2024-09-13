@@ -15,6 +15,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import matplotlib.pyplot as plt
 from scipy.ndimage import distance_transform_edt
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
+import yaml
 
 log = utils.get_pylogger(__name__)
 
@@ -72,10 +73,10 @@ def warp_raster(
     with rasterio.open(src_raster_path) as src:
         # Calculate transform and dimensions for output raster
         transform, width, height = rasterio.warp.calculate_default_transform(
-            src.crs, dst_crs, src.width, src.height, *src.bounds, 
+            src.crs, dst_crs, src.width, src.height, *src.bounds,
             resolution=(dst_res_x, dst_res_y) if dst_res_x and dst_res_y else None
         )
-        
+
         # Update metadata for the output raster
         metadata = src.meta.copy()
         metadata.update({
@@ -105,8 +106,9 @@ def warp_raster(
 def dilate_raster(
     src_raster_path: Path,
     dst_raster_path: Path,
-    dilation_size=100, 
-    smoothing_iterations=0
+    dilation_size: int = 100,
+    smoothing_iterations: int = 0,
+    label_raster: bool = False
 ):
     """
     Fill NoData values in a raster using rasterio's fillnodata function.
@@ -116,18 +118,24 @@ def dilate_raster(
     - dst_raster_path (str): Path to save the filled raster.
     - dilation_size (int): Maximum search distance for interpolation (default is 100).
     - smoothing_iterations (int): Number of smoothing iterations (default is 0).
+    - label_raster (bool): Whether or not the input raster file is a label raster.
     """
     with rasterio.open(src_raster_path) as src:
         data = src.read(1, masked=True)  # Read the first band
+        if label_raster:
+            label_msk = np.isnan(data)
         filled_data = rasterio.fill.fillnodata(
             data,
             max_search_distance=dilation_size,
             smoothing_iterations=smoothing_iterations
         )
-        
+        if label_raster:
+            filled_data[label_msk & ~np.isnan(filled_data)] = 0.
+
+
         # Copy metadata and write the filled raster
         profile = src.profile
-    
+
     with rasterio.open(dst_raster_path, 'w', **profile) as dst:
         dst.write(filled_data, 1)
 
@@ -147,16 +155,16 @@ def clip_raster(
     """
     # Read the shapefile
     shapes = gpd.read_file(aoi_path)
-    
+
     # Open the raster file
     with rasterio.open(src_raster_path) as src:
         # Clip the raster with the shapes from the shapefile
         out_image, out_transform = rasterio.mask.mask(src, shapes.geometry, crop=True)
         out_meta = src.meta.copy()
-        out_meta.update({"driver": "GTiff", 
-                         "height": out_image.shape[1], 
-                         "width": out_image.shape[2], 
-                         "transform": out_transform})
+        out_meta.update({"driver": "GTiff",
+                        "height": out_image.shape[1],
+                        "width": out_image.shape[2],
+                        "transform": out_transform})
 
     # Save the clipped raster
     with rasterio.open(dst_raster_path, "w", **out_meta) as dest:
@@ -248,10 +256,10 @@ def warp_vector(
     """
     # Read the vector file
     gdf = gpd.read_file(src_vector_path)
-    
+
     # Reproject to the target CRS
     gdf = gdf.to_crs(dst_crs)
-    
+
     # Save the reprojected vector
     gdf.to_file(dst_vector_path, driver='ESRI Shapefile')
 
@@ -277,22 +285,22 @@ def vector_to_raster(
     """
     # Read the vector file
     gdf = gpd.read_file(src_vector_path)
-    
+
     # Get bounds and calculate transform
     minx, miny, maxx, maxy = gdf.total_bounds
     width = int((maxx - minx) / dst_res_x)
     height = int((maxy - miny) / dst_res_y)
     transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, width, height)
-    
+
     # Rasterize the geometries
     shapes = ((geom, burn_value) for geom in gdf.geometry)
     raster = rasterio.features.rasterize(
-        shapes=shapes, 
-        out_shape=(height, width), 
+        shapes=shapes,
+        out_shape=(height, width),
         transform=transform,
         fill=fill_value,
     )
-    
+
     # Write to output raster
     with rasterio.open(dst_raster_path, 'w', driver='GTiff', height=height, width=width, count=1,
             dtype=rasterio.float32, crs=gdf.crs, transform=transform, nodata=dst_nodata) as dst:
@@ -381,24 +389,24 @@ def preprocess_raster(
         dst_raster_path=formatted_file,
     )
     warp_raster(
-        src_raster_path=formatted_file, 
+        src_raster_path=formatted_file,
         dst_raster_path=warped_file,
         dst_crs=event_obj.cma.crs,
-        dst_res_x=event_obj.cma.resolution[0], 
+        dst_res_x=event_obj.cma.resolution[0],
         dst_res_y=event_obj.cma.resolution[1],
     )
     dilate_raster( # impute
-        src_raster_path=warped_file, 
+        src_raster_path=warped_file,
         dst_raster_path=imputed_file,
         dilation_size=imputation_size,
     )
     clip_raster(
-        src_raster_path=imputed_file, 
-        dst_raster_path=clipped_file, 
+        src_raster_path=imputed_file,
+        dst_raster_path=clipped_file,
         aoi_path = str(aoi),
     )
     dilate_raster( # dilate
-        src_raster_path=clipped_file, 
+        src_raster_path=clipped_file,
         dst_raster_path=dilated_file,
         dilation_size=window_size,
     )
@@ -456,9 +464,9 @@ def preprocess_vector(
         dst_crs = event_obj.cma.crs,
     )
     vector_to_raster(
-        src_vector_path=warped_shp_file, 
+        src_vector_path=warped_shp_file,
         dst_raster_path=rasterized_file,
-        dst_res_x = event_obj.cma.resolution[0], 
+        dst_res_x = event_obj.cma.resolution[0],
         dst_res_y = event_obj.cma.resolution[1],
         fill_value=np.nan
     )
@@ -467,12 +475,12 @@ def preprocess_vector(
         dst_raster_path=proximity_file,
     )
     clip_raster(
-        src_raster_path=proximity_file, 
-        dst_raster_path=clipped_file, 
+        src_raster_path=proximity_file,
+        dst_raster_path=clipped_file,
         aoi_path = str(aoi),
     )
     dilate_raster(
-        src_raster_path=clipped_file, 
+        src_raster_path=clipped_file,
         dst_raster_path=dilated_file,
         dilation_size=window_size,
     )
@@ -486,6 +494,130 @@ def preprocess_vector(
         scaling_type="standard"
     )
     return scaled_file
+
+def deposits_filtering(
+    df: pd.DataFrame,
+    deposit_type: str,
+    confidence_threshold: float,
+):
+    """
+    Filter df DataFrame
+
+    Parameters:
+    - df (pd.DataFrame): pandas DataFrame
+    - deposit_type (str): Deposit type
+    - confidence_threshold (float): Confidence threshold for deposits filtering
+    """
+    original_len = len(df)
+    df = df[df['top1_deposit_type'].str.contains(deposit_type, case=False, na=False)]
+    df = df[df['top1_deposit_classification_confidence'] >= confidence_threshold]
+    df = df[df['type'].str.contains('Past Producer|Prospect|Producer|NotSpecified', na=False)]
+    df = df[df['rank'].str.contains('A|B|C|U', na=False)]
+    df = df.reset_index(drop=True)
+    # print(f'Original length: {original_len}, Filtered length: {len(df)}')
+    return df
+
+def process_label_raster(
+    event_obj: ProspectModelMetaData,
+    deposits_csv_path: Path,
+    aoi: Path,
+    confidence_threshold: float = 0.5,
+    dilation_size: int = 5,
+):
+    """
+    Rasterize a .csv file with deposits to a raster (label raster)
+
+    Parameters:
+    - event_obj ():
+    - deposits_csv_path (str): Path to the input .csv file wiht deposits.
+    - aoi (str): Path to the shapefile defining the region of interest.
+    - confidence_threshold (float): Confidence threshold for deposits filtering (default is 0.5).
+    - dilation_size (int): Distance for interpolation (default is 5).
+    """
+    warped_shp_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_warped.shp')
+    rasterized_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_rasterized.tif')
+    clipped_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_clipped.tif')
+    dilated_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_processed.tif')
+    label_raster_path = dilated_file
+
+    df = pd.read_csv(deposits_csv_path)
+    deposit_type = event_obj.cma.mineral
+    df = deposits_filtering(df, deposit_type, confidence_threshold)
+
+    geom = gpd.GeoSeries.from_wkt(df['centroid_epsg_4326'], crs='EPSG:4326')
+    gdf = gpd.GeoDataFrame(df, geometry=geom)
+    gdf = gdf.to_crs(event_obj.cma.crs)
+    gdf.to_file(warped_shp_file)
+
+    vector_to_raster(
+        src_vector_path=warped_shp_file,
+        dst_raster_path=rasterized_file,
+        dst_res_x = event_obj.cma.resolution[0],
+        dst_res_y = event_obj.cma.resolution[1],
+        fill_value = 0.0
+    )
+    clip_raster(
+        src_raster_path=rasterized_file,
+        dst_raster_path=clipped_file,
+        aoi_path=aoi
+    )
+    dilate_raster(
+        src_raster_path=clipped_file,
+        dst_raster_path=dilated_file,
+        dilation_size=dilation_size,
+        label_raster=True
+    )
+    return label_raster_path
+
+def create_raster_stack_yaml(
+    event_obj: ProspectModelMetaData,
+    evidence_layer_paths: List[Path],
+    label_raster_path: Path,
+    data_path: Path = Path("./data"),
+):
+    description = event_obj.cma.description
+    model_run_id = event_obj.model_run_id
+
+    yaml_output_path = data_path / Path(event_obj.model_run_id)
+    yaml_output_path.mkdir(parents=True, exist_ok=True)
+
+    raster_files = []
+    # evidence rasters
+    for filename in evidence_layer_paths:
+        filename = str(filename)
+        if filename.endswith('.tif'):
+            raster_files.append({
+                'path' : filename,
+                'type' : 'float32',
+                'outlier_removal' : True,
+                'normalize' : True
+            })
+    # label raster
+    label_raster = str(label_raster_path)
+    if label_raster.endswith('.tif'):
+        raster_files.append({
+            'path' : label_raster,
+            'type' : 'float32',
+            # 'outlier_removal' : False,
+            # 'normalize' : False
+        })
+
+    variables = {
+        '_target_' : 'sri_maper.src.data.preprocessing.generate_raster_stacks',
+        'raster_stacks' : [
+            {
+                'raster_stack_path' : '${data.tif_dir}/multiband_raster_d${data.window_size}.tif',
+                'raster_files_path' : '${paths.data_dir}/',
+                'dilation_size' : '${data.window_size}',
+                'raster_files' : raster_files
+            }
+        ]
+    }
+
+    with open(Path(os.path.join(yaml_output_path, 'preprocessing.yaml')), 'w') as file:
+        yaml.dump(variables, file, sort_keys=False)
+    return yaml_output_path
+
 
 
 def generate_raster_stacks(raster_stacks):

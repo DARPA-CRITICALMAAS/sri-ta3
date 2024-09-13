@@ -41,7 +41,7 @@ spec:
       - name: ${SECRET}
       containers:
         - name: ${SYSTEM_NAME}
-          image: ${REPO_HOST}/${REPO}:${SYSTEM_NAME}-${DUSER}-v${VERSION}
+          image: ${REPO_HOST}/${REPO}:${SYSTEM_NAME}-${DUSER}-v${SYSTEM_VERSION}
 
           workingDir: /workspace
           resources:
@@ -63,7 +63,7 @@ spec:
             - name: rw-vol
               subPath: ${DUSER}/code/${K8_SRC_PATH}
               mountPath: /workspace/${SRC_PATH}
-            
+
             # shared directory for storing data
             - name: rw-vol
               subPath: ${DUSER}/data

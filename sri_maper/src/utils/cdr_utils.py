@@ -10,6 +10,7 @@ from tqdm import tqdm
 import httpx
 import rasterio as rio
 from rasterio.mask import mask
+import fiona
 
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
 from cdr_schemas.prospectivity_input import (ProspectivityOutputLayer, SaveProcessedDataLayer)
@@ -36,14 +37,14 @@ def get_event_payload_result(id: str, app_settings: CDR_Settings):
 def parse_event_payload_result(resp_json: dict, model_type_filter="sri_NN"):
     if resp_json.get("model_type") != model_type_filter:
         raise Exception(f"The model_type '{resp_json.get('model_type')}' is not supported.")
-    
+
     resp_json = resp_json.get("event")
 
     if resp_json.get("event") != "prospectivity_model_run.process":
         raise Exception("Event is not found or is not a model run event")
 
     model_payload= resp_json.get("payload")
-    
+
     prospect_model_metadata = ProspectModelMetaData(
         model_run_id = model_payload.get("model_run_id"),
         cma = model_payload.get("cma"),
@@ -66,7 +67,7 @@ def download_layer(title: str, url: str, dst_dir: Path):
 
 
 def download_evidence_layers(
-    event_obj: ProspectModelMetaData, 
+    event_obj: ProspectModelMetaData,
     data_path: Path = Path("./data")
 ):
     # sets evidence layers location
@@ -77,8 +78,8 @@ def download_evidence_layers(
     ev_lyrs_paths = []
     for ev_lyr in tqdm(event_obj.evidence_layers):
         ev_lyr_path = download_layer(
-            title=ev_lyr.data_source.evidence_layer_raster_prefix, 
-            url=ev_lyr.data_source.download_url, 
+            title=ev_lyr.data_source.evidence_layer_raster_prefix,
+            url=ev_lyr.data_source.download_url,
             dst_dir=ev_lyrs_path
         )
         if ev_lyr_path.suffix == '.zip':
@@ -86,17 +87,18 @@ def download_evidence_layers(
             with zipfile.ZipFile(ev_lyr_path, 'r') as zip_ref:
                 zip_ref.extractall(ev_lyr_path.parent / ev_lyr_path.stem)
         ev_lyrs_paths.append(ev_lyr_path)
-    
+
     return ev_lyrs_paths
 
 def create_aoi_geopkg(
-    event_obj: ProspectModelMetaData, 
+    event_obj: ProspectModelMetaData,
     data_path: Path = Path("./data")
 ):
+    # breakpoint()
     # sets geopackage location
-    geopkg_path = data_path / Path(event_obj.model_run_id) 
+    geopkg_path = data_path / Path(event_obj.model_run_id)
     geopkg_path.mkdir(parents=True, exist_ok=True)
-    geopkg_path = geopkg_path / Path(f"aoi.gpkg")
+    # geopkg_path = geopkg_path / Path(f"aoi.gpkg")
 
     # Creating the AOI geopackage
     gdf = gpd.GeoDataFrame(
@@ -104,28 +106,66 @@ def create_aoi_geopkg(
         crs = event_obj.cma.crs,
         geometry = [event_obj.cma.extent]
     )
-    gdf.to_file(geopkg_path, driver="GPKG")
+    try:
+        gdf.to_file(geopkg_path / Path(f"aoi.gpkg"), driver="GPKG")
+        return geopkg_path / Path(f"aoi.gpkg")
+    except fiona.errors.TransactionError:
+        gdf.to_file(geopkg_path / Path(f"aoi.shp"))
+        return geopkg_path / Path(f"aoi.shp")
 
-    return geopkg_path
+def download_deposits(
+    event_obj: ProspectModelMetaData,
+    app_settings: CDR_Settings,
+    data_path: Path = Path("./data"),
+    # with_location: str = None,
+    # with_deposit_types_only: bool = True,
+    # top_n: int = 1,
+    # limit: int = -1,
+):
+    # breakpoint()
+    # sets deposits location folder
+    deposits_path = data_path / Path(event_obj.model_run_id) / Path("deposits")
+    deposits_path.mkdir(parents=True, exist_ok=True)
+
+    commodity = event_obj.cma.mineral
+
+    headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
+    client = httpx.Client(follow_redirects=True, timeout=None)
+
+    link = f"{app_settings.cdr_host}/v1/minerals/dedup-site/search/{commodity}?with_location=true&with_deposit_types_only=true&top_n=1&limit=-1"
+
+    resp = client.get(link, headers=headers)
+    if resp.status_code == 200:
+        # Get the filename from the 'Content-Disposition' header
+        content_disposition = resp.headers.get('content-disposition')
+        if content_disposition:
+            filename = content_disposition.split("filename=")[-1].strip('"')
+        else:
+            filename = 'deposits.csv' # Use a default filename if none was provided
+        deposits_path = deposits_path / filename
+        # Open file in write mode
+        with open(deposits_path, 'w') as f:
+            # Write the response content to the file
+            f.write(resp.text)
+    else:
+        raise Exception(f"Failed to download file: {resp.status_code}, {resp.text}")
+    return deposits_path
+
 
 def read_tiff(file_path):
     with rio.open(file_path) as src:
         return src.read(1), src
-
-
 def clip_tiff(tiff_path, mask_tiff_path, output_path):
     # placeholder to clip tiff
     shutil.copy(mask_tiff_path, output_path)
-
-
 def prepare_data_sources(payload):
     print("Downloading template cma file")
     updated_url=  payload.cma.download_url
-    
+
     # to remove. local testing
     if "minio.cdr.geo" in payload.cma.download_url:
         updated_url= "http://0.0.0.0:9000/" + payload.cma.download_url.split(":9000/")[-1]
-    
+
     if not os.path.exists(f"datasources/{payload.cma.download_url.split('/')[-1]}"):
         r = httpx.get(updated_url, timeout=5000)
         with open(f"datasources/{payload.cma.download_url.split('/')[-1]}", "wb") as f:
@@ -139,12 +179,12 @@ def prepare_data_sources(payload):
             r = httpx.get(updated_url, timeout=5000)
             with open(f"datasources/{layer.data_source.download_url.split('/')[-1]}", "wb") as f:
                 f.write(r.content)
-    
+
     print("CMA template and layers are downloaded. Now clip them to template extent")
     for layer in payload.evidence_layers:
         clip_tiff(
-            tiff_path = f"datasources/{layer.data_source.download_url.split('/')[-1]}", 
-            mask_tiff_path = f"datasources/{payload.cma.download_url.split('/')[-1]}", 
+            tiff_path = f"datasources/{layer.data_source.download_url.split('/')[-1]}",
+            mask_tiff_path = f"datasources/{payload.cma.download_url.split('/')[-1]}",
             output_path = f"datasources/clipped_{layer.data_source.download_url.split('/')[-1]}"
         )
 
@@ -153,7 +193,7 @@ def prepare_data_sources(payload):
 
 def train_model(payload):
     print("Train model on new process stack ...")
-    print("model is trained")  
+    print("model is trained")
     return
 
 
@@ -183,7 +223,7 @@ def send_outputs(payload, app_settings):
     headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
     client = httpx.Client(follow_redirects=True)
     files_ = {"input_file": (
-        "model_output_uncertainty.tif", 
+        "model_output_uncertainty.tif",
         open("./outputs/model_output_uncertainty.tif", "rb"), "application/octet-stream")
         }
 
@@ -198,7 +238,7 @@ def send_outputs(payload, app_settings):
         print(resp.text)
     else:
         print("Finished sending uncertainty!")
-    
+
     #  additional output layer's metadata
     result_2 = ProspectivityOutputLayer(**{
         "system": app_settings.system_name,
@@ -226,7 +266,7 @@ def send_outputs(payload, app_settings):
         print("An Error Occurred sending likelihood layer")
         print(resp.text)
     else:
-        
+
         print("Finished sending likelihood!")
     return
 
@@ -244,7 +284,7 @@ def send_stack(payload, app_settings):
             "transform_methods":layer.transform_methods,
             "title":f"processed_{layer.data_source.data_source_id}"
             })
-        
+
         files_ = {"input_file": (
                     f"{layer.data_source.download_url.split('/')[-1]}",
                     open(f"./datasources/{layer.data_source.download_url.split('/')[-1]}", "rb"),
@@ -262,7 +302,7 @@ def send_stack(payload, app_settings):
             print("An Error Occurred sending input layer")
             print(resp.text)
         else:
-            
+
             print("Finished sending input layer!")
 
 # stub steps to mimic ta3 model code

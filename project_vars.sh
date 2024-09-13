@@ -17,7 +17,7 @@ export CDR_HOST="https://api.cdr.land"
 export JOB_TAG="-dev-cdr-integration" # meaninful name for THIS job e.g. "-dev"
 export REPO_HOST="open.docker.sarnoff.com" # docker repo e.g. "open.docker.sarnoff.com"
 export DUSER=${USER} # username, default is for SRI's setup
-export WANDB_API_KEY="b05b56b5af68d3c378d5ecfdf23ad3fbe997ad4a"
+export WANDB_API_KEY=""
 ################################################
 # running docker locally variables
 ################################################
