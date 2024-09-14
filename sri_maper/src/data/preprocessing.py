@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import distance_transform_edt
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
 import yaml
+import rasterio
+from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 log = utils.get_pylogger(__name__)
 
@@ -155,11 +157,12 @@ def clip_raster(
     """
     # Read the shapefile
     shapes = gpd.read_file(aoi_path)
+    shapes['geometry'] = shapes['geometry'].simplify(tolerance=0.1)
 
     # Open the raster file
     with rasterio.open(src_raster_path) as src:
         # Clip the raster with the shapes from the shapefile
-        out_image, out_transform = rasterio.mask.mask(src, shapes.geometry, crop=True)
+        out_image, out_transform = rasterio.mask.mask(src, shapes.geometry, crop=True, all_touched=True)
         out_meta = src.meta.copy()
         out_meta.update({"driver": "GTiff",
                         "height": out_image.shape[1],
@@ -169,6 +172,7 @@ def clip_raster(
     # Save the clipped raster
     with rasterio.open(dst_raster_path, "w", **out_meta) as dest:
         dest.write(out_image)
+
 
 
 def remove_outliers_tukey_raster(
@@ -355,17 +359,65 @@ def fill_nodata_raster(
     subprocess.run(cmd, check=True)
 
 
+def align_rasters(
+    src_raster_path,
+    dst_raster_path,
+    reference_raster_path,
+    resampling=rasterio.warp.Resampling.bilinear
+):
+    """
+    Aligns a target raster to a reference raster using rasterio.
+
+    Parameters:
+    - src_raster_path (str): Path to the target raster file to be aligned.
+    - dst_raster_path (str): Path to save the aligned output raster file.
+    - reference_raster_path (str): Path to the reference raster file.
+    """
+    # Open the reference raster
+    with rasterio.open(reference_raster_path) as ref:
+        ref_crs = ref.crs
+        ref_transform = ref.transform
+        ref_width = ref.width
+        ref_height = ref.height
+
+    # Open the target raster
+    with rasterio.open(src_raster_path) as target:
+
+        # Set up the metadata for the aligned output raster
+        aligned_meta = target.meta.copy()
+        aligned_meta.update({
+            'crs': ref_crs,
+            'transform': ref_transform,
+            'width': ref_width,
+            'height': ref_height
+        })
+
+        # Perform the alignment by reprojecting the target raster
+        with rasterio.open(dst_raster_path, 'w', **aligned_meta) as aligned_raster:
+            for i in range(1, target.count + 1):  # Loop through each band
+                reproject(
+                    source=rasterio.band(target, i),
+                    destination=rasterio.band(aligned_raster, i),
+                    src_transform=target.transform,
+                    src_crs=target.crs,
+                    dst_transform=ref_transform,
+                    dst_crs=ref_crs,
+                    resampling=resampling
+                )
+
+
 def preprocess_evidence_layers(
     event_obj: ProspectModelMetaData,
     layers: List[Path],
     aoi: Path,
+    reference_layer_path: Path,
 ):
     pev_lyr_paths = []
     for layer in tqdm(layers):
         if layer.suffix == ".tif":
-            pev_lyr_path = preprocess_raster(event_obj, layer, aoi)
+            pev_lyr_path = preprocess_raster(event_obj, layer, aoi, reference_layer_path)
         elif layer.suffix == ".zip":
-            pev_lyr_path = preprocess_vector(event_obj, layer, aoi)
+            pev_lyr_path = preprocess_vector(event_obj, layer, aoi, reference_layer_path)
         pev_lyr_paths.append(pev_lyr_path)
     return pev_lyr_paths
 
@@ -374,13 +426,15 @@ def preprocess_raster(
     event_obj: ProspectModelMetaData,
     layer: Path,
     aoi: Path,
-    imputation_size: int = 50,
+    reference_layer_path: Path,
+    imputation_size: int = 100,
     window_size: int = 5,
 ):
     formatted_file = layer.parent / (layer.stem +"_formatted" + layer.suffix)
     warped_file = layer.parent / (layer.stem +"_warped" + layer.suffix)
     imputed_file = layer.parent / (layer.stem +"_imputed" + layer.suffix)
     clipped_file = layer.parent / (layer.stem +"_clipped" + layer.suffix)
+    aligned_file = layer.parent / (layer.stem +"_aligned" + layer.suffix)
     dilated_file = layer.parent / (layer.stem +"_dilated" + layer.suffix)
     olr_file = layer.parent / (layer.stem +"_olr" + layer.suffix)
     scaled_file = layer.parent / (layer.stem +"_processed" + layer.suffix)
@@ -405,8 +459,13 @@ def preprocess_raster(
         dst_raster_path=clipped_file,
         aoi_path = str(aoi),
     )
-    dilate_raster( # dilate
+    align_rasters(
         src_raster_path=clipped_file,
+        dst_raster_path=aligned_file,
+        reference_raster_path=reference_layer_path,
+    )
+    dilate_raster( # dilate
+        src_raster_path=aligned_file,
         dst_raster_path=dilated_file,
         dilation_size=window_size,
     )
@@ -444,6 +503,7 @@ def preprocess_vector(
     event_obj: ProspectModelMetaData,
     layer: Path,
     aoi: Path,
+    reference_layer_path: Path,
     window_size: int = 5,
 ):
     # gets vector file path
@@ -455,6 +515,7 @@ def preprocess_vector(
     rasterized_file = layer.parent / (layer.stem + "_rasterized.tif")
     proximity_file = rasterized_file.parent / (rasterized_file.stem +"_proximity" + rasterized_file.suffix)
     clipped_file = rasterized_file.parent / (rasterized_file.stem +"_clipped" + rasterized_file.suffix)
+    aligned_file = rasterized_file.parent / (rasterized_file.stem +"_aligned" + rasterized_file.suffix)
     dilated_file = rasterized_file.parent / (rasterized_file.stem +"_dilated" + rasterized_file.suffix)
     olr_file = rasterized_file.parent / (rasterized_file.stem +"_olr" + rasterized_file.suffix)
     scaled_file = rasterized_file.parent / (rasterized_file.stem +"_processed" + rasterized_file.suffix)
@@ -478,6 +539,11 @@ def preprocess_vector(
         src_raster_path=proximity_file,
         dst_raster_path=clipped_file,
         aoi_path = str(aoi),
+    )
+    align_rasters(
+        src_raster_path=clipped_file,
+        dst_raster_path=aligned_file,
+        reference_raster_path=reference_layer_path,
     )
     dilate_raster(
         src_raster_path=clipped_file,
@@ -573,10 +639,23 @@ def create_raster_stack_yaml(
     event_obj: ProspectModelMetaData,
     evidence_layer_paths: List[Path],
     label_raster_path: Path,
+    raster_stack_path: Path,
     data_path: Path = Path("./data"),
 ):
-    description = event_obj.cma.description
-    model_run_id = event_obj.model_run_id
+    """
+    Creates .yaml file with information about rasters that go into raster stack
+
+    Args:
+        event_obj (ProspectModelMetaData):
+        evidence_layer_paths (List[Path]): Paths to evidence layers
+        label_raster_path (Path): Path to label raster
+        data_path (Path, optional): Path where to output .yaml file. Defaults to Path("./data").
+
+    Returns:
+        _type_: _description_
+    """
+    # description = event_obj.cma.description
+    # model_run_id = event_obj.model_run_id
 
     yaml_output_path = data_path / Path(event_obj.model_run_id)
     yaml_output_path.mkdir(parents=True, exist_ok=True)
@@ -588,28 +667,24 @@ def create_raster_stack_yaml(
         if filename.endswith('.tif'):
             raster_files.append({
                 'path' : filename,
-                'type' : 'float32',
-                'outlier_removal' : True,
-                'normalize' : True
+                # 'type' : 'float32',
+                # 'outlier_removal' : True,
+                # 'normalize' : True
             })
     # label raster
     label_raster = str(label_raster_path)
     if label_raster.endswith('.tif'):
         raster_files.append({
             'path' : label_raster,
-            'type' : 'float32',
-            # 'outlier_removal' : False,
-            # 'normalize' : False
+            # 'type' : 'float32',
         })
 
     variables = {
         '_target_' : 'sri_maper.src.data.preprocessing.generate_raster_stacks',
         'raster_stacks' : [
             {
-                'raster_stack_path' : '${data.tif_dir}/multiband_raster_d${data.window_size}.tif',
-                'raster_files_path' : '${paths.data_dir}/',
-                'dilation_size' : '${data.window_size}',
-                'raster_files' : raster_files
+                'raster_stack_path' : str(raster_stack_path),
+                'raster_files_path' : raster_files
             }
         ]
     }
@@ -618,71 +693,73 @@ def create_raster_stack_yaml(
         yaml.dump(variables, file, sort_keys=False)
     return yaml_output_path
 
+def load_rasters(
+    evidence_layer_paths: List[str],
+):
+    return [load_raster(evidence_layer_path) for evidence_layer_path in evidence_layer_paths]
+
+def load_raster(
+    evidence_layer_path,
+):
+    raster = rasterio.open(evidence_layer_path)
+    log.debug(f"-------- {evidence_layer_path} raster details --------\n")
+    info = {i: dtype for i, dtype in zip(raster.indexes, raster.dtypes)}
+    log.debug(f"Raster bands and dtypes:\n{info}\n\n")
+    log.debug(f"Coordinate reference system:\n{raster.crs}\n\n")
+    log.debug(f"Bounds:{raster.bounds},Size:{raster.shape},Resolution:{raster.res}\n\n")
+    return raster
 
 
 def generate_raster_stacks(raster_stacks):
-    for raster_stack in tqdm(raster_stacks):
-        if not Path(raster_stack.raster_stack_path).is_file():
-            generate_raster_stack(
-                raster_stack.raster_stack_path,
-                raster_stack.raster_files_path,
-                raster_stack.dilation_size,
-                raster_stack.raster_files,
-            )
+    pass
+    # for raster_stack in tqdm(raster_stacks):
+    #     if not Path(raster_stack.raster_stack_path).is_file():
+    #         generate_raster_stack(
+    #             raster_stack.raster_stack_path,
+    #             raster_stack.raster_files_path
+    #         )
 
 
 def generate_raster_stack(
-    raster_stack_path: Path,
-    raster_files_path: Path,
-    dilation_size: int,
-    raster_files: List[str],
+    evidence_layer_paths: List[Path],
+    label_raster_path: Path,
 ):
-    r"""
-    Generates a multi-band GeoTiff (i.e., raster stack). Assumes each raster is already
-    aligned and has imputed values.
-
-    :param raster_stack_path: path to save the raster stack
-    :type raster_stack_path: str
-    :param raster_files_path: root path to library of single band rasters
-    :type raster_files_path: str
-    :param dilation_size: number of pixels to dilate the rasters by
-    :type dilation_size: int
-    :param raster_files: list of paths to single band rasters
-    :type raster_files: List[str]
-    ...
-    :return: None
-    :rtype: None
     """
-    raise NotImplementedError
+    Generates a multi-band GeoTiff (i.e., raster stack). Assumes each raster is already
+    aligned and has imputed, outlier-removed, and scaled values.
+
+    """
+    raster_stack_path = label_raster_path.parent.parent / 'raster_stack' / 'raster_stack.tif'
+
+    all_raster_paths = evidence_layer_paths+[label_raster_path]
+    rasters = load_rasters(all_raster_paths)
+    rasters_data = [raster.read(1, masked=True) for raster in rasters]
+
+    # creating list of raster shapes, raster masks, and overall mask
+    raster_shapes = [raster_data.shape for raster_data in rasters_data]
+
+    # creates the raster dataframe
+    raster_df = pd.DataFrame()
+    for raster_path, raster_data in zip(all_raster_paths, rasters_data):
+        raster_df[f"{raster_path.name}"] = raster_data.flatten()
+    raster_df.loc[raster_df.isnull().any(axis=1), :] = np.nan # if any value in a row is NaN, set all values in that row to NaN
+
+    new_rasters_data = []
+    for i, raster_path in tqdm(enumerate(all_raster_paths)):
+        # extracts masked numpy arrays from the from dataframe
+        new_raster_data = raster_df[f"{raster_path.name}"].values.reshape(raster_shapes[i])
+        new_rasters_data.append(new_raster_data)
 
     # generates and saves raster stack
     raster_stack_meta = rasters[0].meta
     raster_stack_meta.update({"count": len(new_rasters_data)})
     raster_stack_meta.update({"dtype": "float32"})
     log.debug(f"Writing a raster stack with the following meta data: {raster_stack_meta}")
-    makedirs(Path(raster_stack_path).parent, exist_ok=True)
-    with rasterio.open(Path(raster_stack_path), "w", **raster_stack_meta) as raster_stack:
-        tags = {Path(raster_file.path).stem: idx for idx, raster_file in enumerate(raster_files)}
+    with rasterio.open(raster_stack_path, "w", **raster_stack_meta) as raster_stack:
+        tags = {raster_path.stem: idx for idx, raster_path in enumerate(all_raster_paths)}
         tags["ns"] = "evidence_layers"
         raster_stack.update_tags(**tags)
         for idx, new_raster_data in enumerate(new_rasters_data):
             raster_stack.write_band(idx+1, new_raster_data)
 
-
-def load_rasters(
-    raster_files: List[str],
-    rasters_path: str,
-):
-    return [load_raster(Path(rasters_path) / Path(raster_file.path)) for raster_file in raster_files]
-
-
-def load_raster(
-    raster_path,
-):
-    raster = rasterio.open(raster_path)
-    log.debug(f"-------- {raster_path} raster details --------\n")
-    info = {i: dtype for i, dtype in zip(raster.indexes, raster.dtypes)}
-    log.debug(f"Raster bands and dtypes:\n{info}\n\n")
-    log.debug(f"Coordinate reference system:\n{raster.crs}\n\n")
-    log.debug(f"Bounds:{raster.bounds},Size:{raster.shape},Resolution:{raster.res}\n\n")
-    return raster
+    return raster_stack_path

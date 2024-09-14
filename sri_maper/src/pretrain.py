@@ -28,10 +28,10 @@ def pretrain(cfg: DictConfig) -> Tuple[dict, dict]:
     # set seed for random number generators in pytorch, numpy and python.random
     if cfg.get("seed"):
         seed_everything(cfg.seed, workers=True)
-    
+
     log.info(f"Preprocessing rasters...")
     hydra.utils.call(cfg.preprocess)
-    
+
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
@@ -77,7 +77,7 @@ def pretrain(cfg: DictConfig) -> Tuple[dict, dict]:
         if ckpt_path == "":
             log.warning("Best ckpt not found! Using current weights for testing...")
             ckpt_path = None
-        
+
         # preparation
         log.info(f"Best ckpt path: {ckpt_path}")
         model = model.__class__.load_from_checkpoint(ckpt_path)
