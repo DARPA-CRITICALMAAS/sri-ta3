@@ -72,6 +72,7 @@ class TIFFDataModule(LightningDataModule):
         specified_split: Optional[List[List[float]]] = None,
         num_pca_components: Optional[int] = None,
         in_pca_space: Optional[bool] = False,
+        store_all_unlabeled_csv: Optional[bool] = False,
         seed: int = 0,
     ) -> None:
         """Initialize a `TIFFDataModule`.
@@ -133,6 +134,7 @@ class TIFFDataModule(LightningDataModule):
                         seed=self.hparams.seed,
                         log_path=self.hparams.log_path,
                         in_pca_space=self.hparams.in_pca_space,
+                        store_all_unlabeled_csv=self.hparams.store_all_unlabeled_csv,
                     )
                 log.debug(f"Splitting base dataset into train / val / test.")
                 if self.hparams.specified_split:

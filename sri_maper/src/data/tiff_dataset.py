@@ -548,6 +548,7 @@ def pu_downsample(
     seed: int = 0,
     log_path: str = "",
     in_pca_space: bool = False,
+    store_all_unlabeled_csv: bool = False
 ):
     """Function to downsample the dataset using positive-unlabeled learning.
 
@@ -618,7 +619,8 @@ def pu_downsample(
     for p_idx in range(len(p_feats)):
         pu_dist[inds[p_idx]] += dists[p_idx]
     u_dist = pu_dist[len(p_feats):]
-    store_samples(ds_u, log_path, "all_unlabeled", {"name":"distances", "values":u_dist})
+    if store_all_unlabeled_csv:
+        store_samples(ds_u, log_path, "all_unlabeled", {"name":"distances", "values":u_dist})
     # rank unlabeled by negativity likelihood, taking % most negative
     u_dist_sort_idx = np.argsort(u_dist)
 

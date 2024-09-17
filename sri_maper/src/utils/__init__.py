@@ -22,5 +22,7 @@ from sri_maper.src.utils.cdr_utils import (
     download_evidence_layers,
     create_aoi_geopkg,
     download_deposits,
+    send_output,
+    send_processed_evidence_layer,
     CDR_Settings
 )

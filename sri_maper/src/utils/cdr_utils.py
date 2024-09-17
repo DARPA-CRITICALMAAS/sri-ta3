@@ -11,6 +11,7 @@ import httpx
 import rasterio as rio
 from rasterio.mask import mask
 import fiona
+import glob
 
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
 from cdr_schemas.prospectivity_input import (ProspectivityOutputLayer, SaveProcessedDataLayer)
@@ -205,10 +206,91 @@ def run_model(payload):
     return
 
 
-def send_outputs(payload, app_settings):
-    print("Sending Output layers to CDR...")
+# def send_outputs(
+#     output_type: str,
+#     output_path: Path,
+#     payload,
+#     app_settings,
+# ):
+#     print("Sending Output layers to CDR...")
+#     # checks outputs file exists
+#     assert output_path.is_file()
 
-    #  send output layers from model run
+#     #  send output layers from model run
+#     #  create output layer metadata
+#     results = ProspectivityOutputLayer(**{
+#         "system": app_settings.system_name,
+#         "system_version": app_settings.system_version,
+#         "model": app_settings.ml_model_name,
+#         "model_version": app_settings.ml_model_version,
+#         "model_run_id": payload.model_run_id,
+#         "cma_id": payload.cma.cma_id,
+#         "output_type": output_type,
+#         "title":output_path[0].name
+#     })
+#     headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
+#     client = httpx.Client(follow_redirects=True)
+#     files_ = {"input_file": (
+#         "model_output_uncertainty.tif",
+#         open("./outputs/model_output_uncertainty.tif", "rb"), "application/octet-stream")
+#         }
+
+#     resp = client.post(f"{app_settings.cdr_host}/v1/prospectivity/propectivity_output_layer",
+#                         data={
+#                         "metadata": results.model_dump_json(exclude_none=True)
+#                         },
+#                         files=files_,
+#                         headers=headers)
+#     if resp.status_code != 200 or resp.status_code != 204:
+#         print("An Error Occurred sending uncertainty layer")
+#         print(resp.text)
+#     else:
+#         print("Finished sending uncertainty!")
+
+#     #  additional output layer's metadata
+#     result_2 = ProspectivityOutputLayer(**{
+#         "system": app_settings.system_name,
+#         "system_version": app_settings.system_version,
+#         "model": app_settings.ml_model_name,
+#         "model_version": app_settings.ml_model_version,
+#         "model_run_id": payload.model_run_id,
+#         "cma_id": payload.cma.cma_id,
+#         "output_type": "likelihood",
+#         "title":"model_ouput_likelihood.tif"
+#     })
+#     files_ = {"input_file": (
+#         "model_output_likelihood.tif",
+#         open("./outputs/model_output_likelihood.tif", "rb"),
+#         "application/octet-stream")
+#         }
+
+#     resp = client.post(f"{app_settings.cdr_host}/v1/prospectivity/propectivity_output_layer",
+#             data={
+#                 "metadata": result_2.model_dump_json(exclude_none=True)
+#                 },
+#             files=files_,
+#             headers=headers)
+#     if resp.status_code != 200 or resp.status_code != 204:
+#         print("An Error Occurred sending likelihood layer")
+#         print(resp.text)
+#     else:
+#         print("Finished sending likelihood!")
+#     return
+
+def send_output(
+    output_type: str,
+    output_path: Path,
+    payload,
+    app_settings
+):
+    print(f"Sending {output_path} to CDR...")
+
+    # checks outputs type set properly
+    # assert output_type in ["likelihood", "uncertainty"]
+    # checks outputs file exists
+    assert output_path.is_file()
+    assert "likelihood" in output_type.lower() or "uncertaint" in output_type.lower()
+
     #  create output layer metadata
     results = ProspectivityOutputLayer(**{
         "system": app_settings.system_name,
@@ -217,99 +299,120 @@ def send_outputs(payload, app_settings):
         "model_version": app_settings.ml_model_version,
         "model_run_id": payload.model_run_id,
         "cma_id": payload.cma.cma_id,
-        "output_type": "uncertainty",
-        "title":"model_ouput_uncertainty.tif"
+        "output_type": output_type,
+        "title": output_path.name
     })
+    files_ = {"input_file": (
+        output_path.name,
+        open(output_path, "rb"), "application/octet-stream")
+    }
+
+    # prepare the CDR client
     headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
     client = httpx.Client(follow_redirects=True)
-    files_ = {"input_file": (
-        "model_output_uncertainty.tif",
-        open("./outputs/model_output_uncertainty.tif", "rb"), "application/octet-stream")
-        }
 
-    resp = client.post(f"{app_settings.cdr_host}/v1/prospectivity/propectivity_output_layer",
-                       data={
-                        "metadata": results.model_dump_json(exclude_none=True)
-                        },
-                        files=files_,
-                        headers=headers)
-    if resp.status_code != 200 or resp.status_code != 204:
-        print("An Error Occurred sending uncertainty layer")
-        print(resp.text)
+    # post the request
+    resp = client.post(
+        url=f"{app_settings.cdr_host}/v1/prospectivity/prospectivity_output_layer",
+        data={"metadata": results.model_dump_json(exclude_none=True)},
+        files=files_,
+        headers=headers
+    )
+    if resp.status_code == 200 or resp.status_code == 204:
+        print(f"Finished sending {output_path.name} to CDR.")
     else:
-        print("Finished sending uncertainty!")
+        print(f"An Error Occurred sending {output_path} to CDR.")
+        print(resp.status_code)
+        print(resp.text)
+        print("debug")
 
-    #  additional output layer's metadata
-    result_2 = ProspectivityOutputLayer(**{
+# def send_stack(payload, app_settings):
+#     headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
+#     client = httpx.Client(follow_redirects=True)
+#     print("Now sending processed data layers")
+#     for layer in payload.evidence_layers:
+#         data_layer = SaveProcessedDataLayer(**{
+#             "system": app_settings.system_name,
+#             "system_version": app_settings.system_version,
+#             "data_source_id": layer.data_source.data_source_id,
+#             "model_run_id": payload.model_run_id,
+#             "cma_id": payload.cma.cma_id,
+#             "transform_methods":layer.transform_methods,
+#             "title":f"processed_{layer.data_source.data_source_id}"
+#             })
+
+#         files_ = {"input_file": (
+#                     f"{layer.data_source.download_url.split('/')[-1]}",
+#                     open(f"./datasources/{layer.data_source.download_url.split('/')[-1]}", "rb"),
+#                     "application/octet-stream"
+#                 )}
+
+#         resp = client.post(f"{app_settings.cdr_host}/v1/prospectivity/propectivity_input_layer",
+#             data={
+#                 "metadata": data_layer.model_dump_json(exclude_none=True)
+#                 },
+#             files=files_,
+#             headers=headers
+#             )
+#         if resp.status_code != 200 or resp.status_code != 204:
+#             print("An Error Occurred sending input layer")
+#             print(resp.text)
+#         else:
+
+#             print("Finished sending input layer!")
+
+
+def send_processed_evidence_layer(
+    layer_path: Path,
+    layer: str,
+    payload,
+    app_settings
+):
+    print(f"Sending {layer_path.stem} to CDR...")
+
+    # checks outputs file exists
+    assert layer_path.is_file()
+
+    #  create processed data layer metadata
+    data_layer = SaveProcessedDataLayer(**{
         "system": app_settings.system_name,
         "system_version": app_settings.system_version,
-        "model": app_settings.ml_model_name,
-        "model_version": app_settings.ml_model_version,
+        "data_source_id": layer.data_source.data_source_id,
         "model_run_id": payload.model_run_id,
         "cma_id": payload.cma.cma_id,
-        "output_type": "likelihood",
-        "title":"model_ouput_likelihood.tif"
+        "transform_methods":layer.transform_methods,
+        "title":f"processed_{layer.data_source.data_source_id}"
     })
     files_ = {"input_file": (
-        "model_output_likelihood.tif",
-        open("./outputs/model_output_likelihood.tif", "rb"),
-        "application/octet-stream")
-        }
+        layer_path.name,
+        open(layer_path, "rb"),
+        "application/octet-stream"
+    )}
 
-    resp = client.post(f"{app_settings.cdr_host}/v1/prospectivity/propectivity_output_layer",
-            data={
-                "metadata": result_2.model_dump_json(exclude_none=True)
-                },
-            files=files_,
-            headers=headers)
-    if resp.status_code != 200 or resp.status_code != 204:
-        print("An Error Occurred sending likelihood layer")
-        print(resp.text)
-    else:
-
-        print("Finished sending likelihood!")
-    return
-
-def send_stack(payload, app_settings):
+    # prepare the CDR client
     headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
     client = httpx.Client(follow_redirects=True)
-    print("Now sending processed data layers")
-    for layer in payload.evidence_layers:
-        data_layer = SaveProcessedDataLayer(**{
-            "system": app_settings.system_name,
-            "system_version": app_settings.system_version,
-            "data_source_id": layer.data_source.data_source_id,
-            "model_run_id": payload.model_run_id,
-            "cma_id": payload.cma.cma_id,
-            "transform_methods":layer.transform_methods,
-            "title":f"processed_{layer.data_source.data_source_id}"
-            })
 
-        files_ = {"input_file": (
-                    f"{layer.data_source.download_url.split('/')[-1]}",
-                    open(f"./datasources/{layer.data_source.download_url.split('/')[-1]}", "rb"),
-                    "application/octet-stream"
-                )}
-
-        resp = client.post(f"{app_settings.cdr_host}/v1/prospectivity/propectivity_input_layer",
-            data={
-                "metadata": data_layer.model_dump_json(exclude_none=True)
-                },
-            files=files_,
-            headers=headers
-            )
-        if resp.status_code != 200 or resp.status_code != 204:
-            print("An Error Occurred sending input layer")
-            print(resp.text)
-        else:
-
-            print("Finished sending input layer!")
+    # post the request
+    resp = client.post(
+        url=f"{app_settings.cdr_host}/v1/prospectivity/prospectivity_input_layer",
+        data={"metadata": data_layer.model_dump_json(exclude_none=True)},
+        files=files_,
+        headers=headers
+    )
+    if resp.status_code == 200 or resp.status_code == 204:
+        print(f"Finished sending {layer_path.name} to CDR.")
+    else:
+        print(f"An Error Occurred sending {layer_path} to CDR.")
+        print(resp.status_code)
+        print(resp.text)
+        print("debug")
 
 # stub steps to mimic ta3 model code
 def run_ta3_pipeline(payload, app_settings):
     prepare_data_sources(payload=payload)
     train_model(payload=payload)
     run_model(payload=payload)
-    send_outputs(payload=payload, app_settings=app_settings)
-    send_stack(payload=payload, app_settings=app_settings)
+    send_output(payload=payload, app_settings=app_settings)
+    send_processed_evidence_layer(payload=payload, app_settings=app_settings)
     print("finished!")

@@ -546,7 +546,7 @@ def preprocess_vector(
         reference_raster_path=reference_layer_path,
     )
     dilate_raster(
-        src_raster_path=clipped_file,
+        src_raster_path=aligned_file,
         dst_raster_path=dilated_file,
         dilation_size=window_size,
     )
@@ -723,13 +723,16 @@ def generate_raster_stacks(raster_stacks):
 def generate_raster_stack(
     evidence_layer_paths: List[Path],
     label_raster_path: Path,
+    window_size: int = 5
 ):
     """
     Generates a multi-band GeoTiff (i.e., raster stack). Assumes each raster is already
     aligned and has imputed, outlier-removed, and scaled values.
 
     """
-    raster_stack_path = label_raster_path.parent.parent / 'raster_stack' / 'raster_stack.tif'
+    raster_stack_path = label_raster_path.parent.parent / 'raster_stack'
+    raster_stack_path.mkdir(parents=True, exist_ok=True)
+    raster_stack_path = raster_stack_path / f'raster_stack_d{window_size}.tif'
 
     all_raster_paths = evidence_layer_paths+[label_raster_path]
     rasters = load_rasters(all_raster_paths)
