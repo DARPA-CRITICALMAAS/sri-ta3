@@ -1,52 +1,29 @@
-import argparse
+import os
+from pathlib import Path
+from tqdm import tqdm
+
+# CDR intergration imports
 import atexit
 import hashlib
 import hmac
-import os
-
 from fastapi.security import APIKeyHeader
-
 import httpx
 import ngrok
-
 import uvicorn
 import uvicorn.logging
-from cdr_schemas.events import Event
 from fastapi import (BackgroundTasks, Depends, FastAPI, HTTPException, Request, status)
-# from common import run_ta3_pipeline
+from cdr_schemas.events import Event
 
-from pydantic_settings import BaseSettings
-from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
-
+# SRI TA3 specific imports
+from torch import set_float32_matmul_precision
 from sri_maper.src import utils
-from sri_maper.src.data.preprocessing import preprocess_evidence_layers, \
-                                            process_label_raster, \
-                                            generate_raster_stack, \
-                                            create_raster_stack_yaml
-
+import sri_maper.src.data.preprocessing as preprocessing
 from sri_maper.src.pretrain import pretrain
 from sri_maper.src.train import train
 from sri_maper.src.map import build_map
 
-from torch import set_float32_matmul_precision
-set_float32_matmul_precision('medium') # reduces floating point precision for computational efficiency
 
-from pathlib import Path
-from tqdm import tqdm
-
-parser = argparse.ArgumentParser()
-args = parser.parse_args()
-
-app_settings = utils.CDR_Settings(
-    system_name = os.environ["SYSTEM_NAME"],
-    system_version = os.environ["SYSTEM_VERSION"],
-    ml_model_name = "xcorp_prospectivity_model",
-    ml_model_version = "0.0.1",
-    user_api_token = os.environ["CDR_TOKEN"],
-    cdr_host = os.environ["CDR_HOST"],
-)
-
-def run_ta3_pipeline(event_id):
+def run_ta3_pipeline(event_id, app_settings):
     print("Querying CDR for event.")
     model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
 
@@ -58,8 +35,9 @@ def run_ta3_pipeline(event_id):
 
     print("Downloading deposits.")
     deposits_path = utils.download_deposits(model_event_obj, app_settings=app_settings)
+
     print("Processing label raster.")
-    processed_label_raster_path = process_label_raster(
+    processed_label_raster_path = preprocessing.process_label_raster(
         event_obj=model_event_obj,
         deposits_csv_path=deposits_path,
         aoi=aoi_geopkg_path,
@@ -67,8 +45,9 @@ def run_ta3_pipeline(event_id):
 
     print("Downloading evidence layers.")
     evidence_layer_paths = utils.download_evidence_layers(model_event_obj)
+
     print("Preprocessing evidence layers.")
-    processed_evidence_layer_paths = preprocess_evidence_layers(
+    processed_evidence_layer_paths = preprocessing.preprocess_evidence_layers(
         event_obj=model_event_obj,
         layers=evidence_layer_paths,
         aoi=aoi_geopkg_path,
@@ -76,13 +55,13 @@ def run_ta3_pipeline(event_id):
     )
 
     print("Creating a raster stack.")
-    raster_stack_path = generate_raster_stack(
+    raster_stack_path = preprocessing.generate_raster_stack(
         evidence_layer_paths=processed_evidence_layer_paths,
         label_raster_path=processed_label_raster_path
     )
 
     print("Creating raster stack .yaml file.")
-    raster_stack_yaml_path = create_raster_stack_yaml(
+    raster_stack_yaml_path = preprocessing.create_raster_stack_yaml(
         event_obj=model_event_obj,
         evidence_layer_paths=processed_evidence_layer_paths,
         label_raster_path=processed_label_raster_path,
@@ -158,62 +137,39 @@ def run_ta3_pipeline(event_id):
 
     print(f"event_id={event_id} cma is finished!")
 
-class Settings(BaseSettings):
-    # TO BE CHANGED BY TA3-4 system.
-    system_name: str = os.environ["SYSTEM_NAME"]
-    system_version: str = os.environ["SYSTEM_VERSION"]
-    ml_model_name: str = "xcorp_prospectivity_model"
-    ml_model_version: str = "0.0.1"
 
-    # Local port to run on
-    local_port: int = 9999
-    # To be filled in programmatically via ngrok below.
-    callback_url: str = ""
-    # Secret string used for signature verification on callback.  Changed by TA3-4 system.
-    registration_secret: str = "mysecret"
-
-    # To be provided to TA3-4 system by CDR admin
-    user_api_token: str = os.environ["CDR_TOKEN"]
-    cdr_host: str = os.environ["CDR_HOST"]
-    admin_cdr_host: str = "https://admin.cdr.land"
-    # For local development
-    # cdr_host: str = "http://0.0.0.0:8333"
-    # admin_cdr_host: str = "http://0.0.0.0:3333"
-
-
-    # To be filled in programmatically after registration process below.  Needed to remove registration.
-    registration_id: str = ""
-    ngrok.set_auth_token(os.environ["NGROK_AUTHTOKEN"])
-    # ngrok.set_auth_token("2mFmoyp0MKgIgpxn98X6U7EvSq5_3fbaqD6BfoAUkS4qq5Xab")
-
-    class Config:
-        case_sensitive = False
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
-
-# Create an instance
-app_settings = Settings()
-
-
-
-# breakpoint()
-# Get ngrok to give us an endpoint
-listener = ngrok.forward(app_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
-app_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
-
+server_settings = utils.CDR_Settings(
+    system_name = os.environ["SYSTEM_NAME"],
+    system_version = os.environ["SYSTEM_VERSION"],
+    ml_model_name = os.environ["MODEL_NAME"],
+    ml_model_version = os.environ["MODEL_VERSION"],
+    user_api_token = os.environ["CDR_TOKEN"],
+    cdr_host = os.environ["CDR_HOST"],
+    local_port = int(os.environ["NGROK_PORT"]),
+    registration_id = "",
+    registration_secret = os.environ["CDR_HOST"],
+    callback_url = ""
+)
 
 def clean_up():
     # delete our registered system at CDR on program end
-    headers = {'Authorization': f'Bearer {app_settings.user_api_token}'} # Define the headers for the HTTP request. The 'Authorization' header is set to 'Bearer ' followed by the user API token.
+    headers = {'Authorization': f'Bearer {server_settings.user_api_token}'} # Define the headers for the HTTP request. The 'Authorization' header is set to 'Bearer ' followed by the user API token.
     client = httpx.Client(follow_redirects=True) # Create an HTTP client that follows redirects.
-    client.delete(f"{app_settings.cdr_host}/user/me/register/{app_settings.registration_id}", headers=headers) # Send a DELETE request to the CDR host to unregister the system. The URL is constructed from the CDR host URL, the registration ID, and some static parts. The headers defined earlier are passed to the request.
-
+    client.delete(f"{server_settings.cdr_host}/user/me/register/{server_settings.registration_id}", headers=headers) # Send a DELETE request to the CDR host to unregister the system. The URL is constructed from the CDR host URL, the registration ID, and some static parts. The headers defined earlier are passed to the request.
 
 # register clean_up
 atexit.register(clean_up)
 
+
+
+
+# Get ngrok to give us an endpoint
+listener = ngrok.forward(server_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
+server_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
+
+
 app = FastAPI() # creating an instance
+
 
 async def event_handler(
     evt: Event
@@ -225,16 +181,7 @@ async def event_handler(
             case Event(event="prospectivity_model_run.process"):
                 print("Received model run event payload!")
                 print(evt.payload)
-                # breakpoint()
-                run_ta3_pipeline(evt.payload['model_run_id'])
-                # run_ta3_pipeline(
-                #     ProspectModelMetaData(
-                #         model_run_id = evt.payload.get("model_run_id"),
-                #         cma = evt.payload.get("cma"),
-                #         model_type = evt.payload.get("model_type"),
-                #         train_config = evt.payload.get("train_config"),
-                #         evidence_layers = evt.payload.get("evidence_layers"),
-                #         ), app_settings)
+                run_ta3_pipeline(evt.payload['model_run_id'], server_settings)
             case _:
                 print("Nothing to do for event: %s", evt)
 
@@ -242,19 +189,17 @@ async def event_handler(
         print("background processing event: %s", evt)
         raise
 
-cdr_signiture = APIKeyHeader(name="x-cdr-signature-256")
-
 # verify the signature of  a request
 async def verify_signature(
     request: Request,
-    signature_header: str = Depends(cdr_signiture)
+    signature_header: str = Depends(APIKeyHeader(name="x-cdr-signature-256"))
 ):
     payload_body = await request.body() # retrieving the body of the request
     if not signature_header:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="x-hub-signature-256 header is missing!")
     hash_object = hmac.new(
-        app_settings.registration_secret.encode("utf-8"),
+        server_settings.registration_secret.encode("utf-8"),
         msg=payload_body,
         digestmod=hashlib.sha256
     ) # creating a new hmac hash object
@@ -284,22 +229,21 @@ def run():
     uvicorn.run(
         "__main__:app",
         host="0.0.0.0",
-        port=app_settings.local_port,
+        port=server_settings.local_port,
         reload=False
     ) # start a Uvicorn server with the FastAPI application
 
 
 def register_system():
-    # breakpoint()
-    """Register our system to the CDR using the app_settings"""
-    global app_settings
-    headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
+    """Register our system to the CDR using the server_settings"""
+    global server_settings
+    headers = {'Authorization': f'Bearer {server_settings.user_api_token}'}
 
     registration = {
-        "name": app_settings.system_name,
-        "version": app_settings.system_version,
-        "callback_url": app_settings.callback_url,
-        "webhook_secret": app_settings.registration_secret,
+        "name": server_settings.system_name,
+        "version": server_settings.system_version,
+        "callback_url": server_settings.callback_url,
+        "webhook_secret": server_settings.registration_secret,
         # Leave blank if callback url has no auth requirement
         "auth_header": "",
         "auth_token": "",
@@ -310,13 +254,16 @@ def register_system():
     # creating an httpx client
     client = httpx.Client(follow_redirects=True) # follow_redirects=True argument tells the client to automatically follow redirects
 
-    r = client.post(f"{app_settings.cdr_host}/user/me/register",
+    r = client.post(f"{server_settings.cdr_host}/user/me/register",
                     json=registration, headers=headers)
 
     # Log our registration_id such we can delete it when we close the program.
-    app_settings.registration_id = r.json()["id"]
+    server_settings.registration_id = r.json()["id"]
 
 
 if __name__ == "__main__":
+    set_float32_matmul_precision('medium') # reduces floating point precision for computational efficiency
+    print("Registering with CDR")
     register_system()
+    print("Starting TA3 server")
     run()

@@ -6,16 +6,20 @@ export NAMESPACE="criticalmaas-ta3"
 export SYSTEM_NAME="sri-maper"
 export SYSTEM_VERSION="0.0.1"
 export SYSTEM_DESCRIPTION="SRI MAPER - Mineral Assessment Platform with Explainable Representations"
+export MODEL_NAME="MAE"
+export MODEL_VERSION="0.0.1"
 ################################################
 # the token that is used to authenticate with the CDR
 ################################################
-export CDR_TOKEN="d25ad5e5c446573640612cc18b7536ba19e97e3a78de0edc22b15cf078360d25"
+export CDR_TOKEN=""
 export CDR_HOST="https://api.cdr.land"
 export NGROK_AUTHTOKEN=""
+export NGROK_SECRET=""
+export NGROK_PORT="80"
 ################################################
 # docker user variables
 ################################################
-export JOB_TAG="-dev-cdr-integration" # meaninful name for THIS job e.g. "-dev"
+export JOB_TAG="-dev-cdr-integration-test" # meaninful name for THIS job e.g. "-dev"
 export REPO_HOST="open.docker.sarnoff.com" # docker repo e.g. "open.docker.sarnoff.com"
 export DUSER=${USER} # username, default is for SRI's setup
 export WANDB_API_KEY=""

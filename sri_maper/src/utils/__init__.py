@@ -16,7 +16,6 @@ from sri_maper.src.utils.utils import (
 from sri_maper.src.utils.storage_utils import write_tif, write_embeddings, collect_gpu_results
 from sri_maper.src.utils.posthoc_utils import BinaryTemperatureScaling, ThresholdMoving
 from sri_maper.src.utils.cdr_utils import (
-    run_ta3_pipeline,
     get_event_payload_result,
     parse_event_payload_result,
     download_evidence_layers,

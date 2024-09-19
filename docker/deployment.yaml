@@ -97,3 +97,11 @@ spec:
               value: ${CDR_HOST}
             - name: NGROK_AUTHTOKEN
               value: ${NGROK_AUTHTOKEN}
+            - name: NGROK_SECRET
+              value: ${NGROK_SECRET}
+            - name: NGROK_PORT
+              value: "${NGROK_PORT}"
+            - name: MODEL_NAME
+              value: ${MODEL_NAME}
+            - name: MODEL_VERSION
+              value: "${MODEL_VERSION}"
