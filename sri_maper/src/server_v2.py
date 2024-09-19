@@ -37,14 +37,40 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 args = parser.parse_args()
 
-app_settings = utils.CDR_Settings(
-    system_name = os.environ["SYSTEM_NAME"],
-    system_version = os.environ["SYSTEM_VERSION"],
-    ml_model_name = "xcorp_prospectivity_model",
-    ml_model_version = "0.0.1",
-    user_api_token = os.environ["CDR_TOKEN"],
-    cdr_host = os.environ["CDR_HOST"],
-)
+class Settings(BaseSettings):
+    # TO BE CHANGED BY TA3-4 system.
+    system_name: str = os.environ["SYSTEM_NAME"]
+    system_version: str = os.environ["SYSTEM_VERSION"]
+    ml_model_name: str = "xcorp_prospectivity_model"
+    ml_model_version: str = "0.0.1"
+
+    # Local port to run on
+    local_port: int = 9999
+    # To be filled in programmatically via ngrok below.
+    callback_url: str = ""
+    # Secret string used for signature verification on callback.  Changed by TA3-4 system.
+    registration_secret: str = "mysecret"
+
+    # To be provided to TA3-4 system by CDR admin
+    user_api_token: str = os.environ["CDR_TOKEN"]
+    cdr_host: str = os.environ["CDR_HOST"]
+    admin_cdr_host: str = "https://admin.cdr.land"
+    # For local development
+    # cdr_host: str = "http://0.0.0.0:8333"
+    # admin_cdr_host: str = "http://0.0.0.0:3333"
+
+    # To be filled in programmatically after registration process below.  Needed to remove registration.
+    registration_id: str = ""
+    ngrok.set_auth_token(os.environ["NGROK_AUTHTOKEN"])
+
+    class Config:
+        case_sensitive = False
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+
+# Create an instance
+app_settings = Settings()
 
 def run_ta3_pipeline(event_id):
     print("Querying CDR for event.")
@@ -158,46 +184,7 @@ def run_ta3_pipeline(event_id):
 
     print(f"event_id={event_id} cma is finished!")
 
-class Settings(BaseSettings):
-    # TO BE CHANGED BY TA3-4 system.
-    system_name: str = os.environ["SYSTEM_NAME"]
-    system_version: str = os.environ["SYSTEM_VERSION"]
-    ml_model_name: str = "xcorp_prospectivity_model"
-    ml_model_version: str = "0.0.1"
 
-    # Local port to run on
-    local_port: int = 9999
-    # To be filled in programmatically via ngrok below.
-    callback_url: str = ""
-    # Secret string used for signature verification on callback.  Changed by TA3-4 system.
-    registration_secret: str = "mysecret"
-
-    # To be provided to TA3-4 system by CDR admin
-    user_api_token: str = os.environ["CDR_TOKEN"]
-    cdr_host: str = os.environ["CDR_HOST"]
-    admin_cdr_host: str = "https://admin.cdr.land"
-    # For local development
-    # cdr_host: str = "http://0.0.0.0:8333"
-    # admin_cdr_host: str = "http://0.0.0.0:3333"
-
-
-    # To be filled in programmatically after registration process below.  Needed to remove registration.
-    registration_id: str = ""
-    ngrok.set_auth_token(os.environ["NGROK_AUTHTOKEN"])
-    # ngrok.set_auth_token("2mFmoyp0MKgIgpxn98X6U7EvSq5_3fbaqD6BfoAUkS4qq5Xab")
-
-    class Config:
-        case_sensitive = False
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
-
-# Create an instance
-app_settings = Settings()
-
-
-
-# breakpoint()
 # Get ngrok to give us an endpoint
 listener = ngrok.forward(app_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
 app_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
@@ -225,16 +212,7 @@ async def event_handler(
             case Event(event="prospectivity_model_run.process"):
                 print("Received model run event payload!")
                 print(evt.payload)
-                # breakpoint()
                 run_ta3_pipeline(evt.payload['model_run_id'])
-                # run_ta3_pipeline(
-                #     ProspectModelMetaData(
-                #         model_run_id = evt.payload.get("model_run_id"),
-                #         cma = evt.payload.get("cma"),
-                #         model_type = evt.payload.get("model_type"),
-                #         train_config = evt.payload.get("train_config"),
-                #         evidence_layers = evt.payload.get("evidence_layers"),
-                #         ), app_settings)
             case _:
                 print("Nothing to do for event: %s", evt)
 
@@ -290,7 +268,6 @@ def run():
 
 
 def register_system():
-    # breakpoint()
     """Register our system to the CDR using the app_settings"""
     global app_settings
     headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
