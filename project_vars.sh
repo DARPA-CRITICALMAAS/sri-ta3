@@ -11,6 +11,7 @@ export SYSTEM_DESCRIPTION="SRI MAPER - Mineral Assessment Platform with Explaina
 ################################################
 export CDR_TOKEN="d25ad5e5c446573640612cc18b7536ba19e97e3a78de0edc22b15cf078360d25"
 export CDR_HOST="https://api.cdr.land"
+export NGROK_AUTHTOKEN=""
 ################################################
 # docker user variables
 ################################################

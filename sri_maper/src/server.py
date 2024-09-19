@@ -1,7 +1,10 @@
 import argparse
 import os
 from sri_maper.src import utils
-from sri_maper.src.data.preprocessing import preprocess_evidence_layers, process_label_raster, generate_raster_stack, create_raster_stack_yaml
+from sri_maper.src.data.preprocessing import preprocess_evidence_layers, \
+                                            process_label_raster, \
+                                            generate_raster_stack, \
+                                            create_raster_stack_yaml
 
 from sri_maper.src.pretrain import pretrain
 from sri_maper.src.train import train
@@ -39,7 +42,6 @@ if __name__ == "__main__":
 
         print("Parsing CDR event payload.")
         model_event_obj = utils.parse_event_payload_result(model_event_json)
-        breakpoint()
 
         print("Generating AOI geopackage.")
         aoi_geopkg_path = utils.create_aoi_geopkg(model_event_obj)
@@ -81,7 +83,7 @@ if __name__ == "__main__":
         )
         # raster_stack_path = Path("data/49d7a30705fc478d9fbcea371da4627a/raster_stack/raster_stack_d5.tif")
 
-        print("Creating raster stack .yaml file.") # - DONE
+        print("Creating raster stack .yaml file.")
         raster_stack_yaml_path = create_raster_stack_yaml(
             event_obj=model_event_obj,
             evidence_layer_paths=processed_evidence_layer_paths,
@@ -160,17 +162,17 @@ if __name__ == "__main__":
                 app_settings=app_settings
             )
 
-# process label raster -> need to query CDR, filter CSV using gdf, then rasterize
-# after have all evidence and label layers, create raster stack
-# then create the preprocess YAML
-# then run pretrain
-# then run train
-# then generate map
-# then upload map results to CDR
-# then upload processed evidence layers to CDR (not labels and not feature attributions!)
+        # process label raster -> need to query CDR, filter CSV using gdf, then rasterize
+        # after have all evidence and label layers, create raster stack
+        # then create the preprocess YAML
+        # then run pretrain
+        # then run train
+        # then generate map
+        # then upload map results to CDR
+        # then upload processed evidence layers to CDR (not labels and not feature attributions!)
 
-        import pdb
-        pdb.set_trace()
+        # import pdb
+        # pdb.set_trace()
 
         # utils.run_ta3_pipeline(
         #     ProspectModelMetaData(

@@ -135,7 +135,10 @@ setup(
         "imbalanced-learn",
         "cdr_schemas @ git+https://github.com/DARPA-CRITICALMAAS/cdr_schemas.git@v0.4.5",
         "python-dotenv",
-        "pydantic_settings"
+        "pydantic_settings",
+        "fastapi",
+        "ngrok",
+        "uvicorn"
     ],
 
     # List additional groups of dependencies here (e.g. development
