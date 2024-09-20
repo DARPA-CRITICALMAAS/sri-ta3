@@ -74,7 +74,7 @@ The directory structure looks like this:
 ```
 
 ## Installation
-This repo is compatible with running locally, on docker locally, or on docker in a Kubernetes cluster. Please **follow the corresponding instrcutions exactly, carefully** so install is smooth. Once you are familiar with the structure, you can make changes.
+This repo is compatible with running locally, on docker locally, or on docker in a Kubernetes cluster. Please **follow the corresponding instrcutions exactly, carefully** so install is smooth. Once you are familiar with the structure, you can make changes. NOTE - the repo is currently DEPENDENT on having live [CDR](https://github.com/DARPA-CRITICALMAAS/cdr) and [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) instances to recieve the inputs necessary to run as a server.
 
 ### Local install and run
 This setup presents the easiest installation but is more brittle than using docker containers. Please make a virtual environment of your choosing, source the environment, clone the repo, and install the code using `setup.py`. Below are example commands to do so.
@@ -90,23 +90,28 @@ source project_vars.sh
 # installs from source code
 python3 -m pip install -e .
 ```
-*If installation succeeded without errors,* you should be able to run the code locally. Before we do that, let's prepare the data within the repo used to perform CMAs. Skip to [Data Setup](<#Data-Setup>).
+*If installation succeeded without errors,* you should be able to run the SRI TA3 server. Skip to [SRI TA3 server](<#SRI-TA3-server>).
 
 ### Install with docker container that is run locally
-This setup is slightly more involved but provides more robustness across physical devices by using docker. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. First, edit the `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY` variables [project_vars.sh](project_vars.sh) to your use case. After editing [project_vars.sh](project_vars.sh), please clone the repo, and build the docker image. Below are example commands to do so using the conenivence scripts.
+This setup is slightly more involved but provides more robustness across physical devices by using docker. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. First, clone the repo locally.
 ```bash
 # clone repo source code locally
 git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
 cd sri-ta3
+```
+Next, edit the variables in [project_vars.sh](project_vars.sh) relevant to your use case. Typically, one needs to edit `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY`, `CDR_TOKEN`, `CDR_HOST`, and `NGROK_AUTHTOKEN`. After editing [project_vars.sh](project_vars.sh), build and run the docker image. Below are example commands to do so using the conenivence scripts.
+```bash
 # builds docker image (installing source in image) and pushes to docker repo
 bash docker/run_docker_build_push.sh
+# runs docker image
+bash docker/run_docker_local.sh
 ```
 Optionally, if you would like to override the default `logs` and `data` folders within this repo that are empty to use exisitng ones (e.g. on datalake) that might contain existing logs and data, simply mount (or overwite) the corresponding folders on the datalake to the empty `logs` and `data` folders within this repo. Below are examles commands to do so.
 ```bash
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/logs ./logs
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/data ./data
 ```
-*If installation succeeded without errors,* you should be able to run the code locally. Before we do that, let's prepare the data within the repo used to perform CMAs. Skip to [Data Setup](<#Data-Setup>).
+*If installation succeeded without errors,* you should be able to run the SRI TA3 server. Skip to [SRI TA3 server](<#SRI-TA3-server>).
 
 ### Install with docker container that is run on the SRI International Kubernetes cluster
 This setup is slightly more involved but provides more scalability to use more compute by using docker and Kubernetes. First we'll need to prepare some folders on the datalake to contain your data, code, and logs. Under the `criticalmaas-ta3` folder (namespace) within the `vt-open` datalake, make the following directory structure for YOUR use using your employee ID number (i.e. eXXXXX). NOTE, you only need to make the folders with the comment `CREATE` in it, the others should exist already. **Be careful not to corrupt the folders of other users or namespaces.**
@@ -114,10 +119,10 @@ This setup is slightly more involved but provides more scalability to use more c
 vt-open
 ├── ... # other folders for other namespaces - avoid
 ├── criticalmaas-ta3 # top-level of criticalmaas-ta3 namespace
-│   ├── data # contains all criticalmaas-ta3 data - (k8s READ ONLY)
 │   └── k8s # contains criticalmaas-ta3 code & logs for ALL users - (k8s READ & WRITE)
 │       ├── eXXXXX # folder you should CREATE to contain your code & logs
 │       │   ├── code # folder you should CREATE to contain your code
+│       │   ├── data # folder you should CREATE to contain your data
 │       │   └── logs # folder you should CREATE to contain your logs
 │       └── ... # other folders for other users - avoid
 └── ... # other folders for other namespaces - avoid
@@ -129,274 +134,36 @@ mkdir k8s-code
 # mount the datalake folder that hosts the code (Kubernetes will have access)
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/vt-open/criticalmaas-ta3/k8s/${USER}/code ./k8s-code
 ```
-Last, we'll install the repo. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. Edit the `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY` variables [project_vars.sh](project_vars.sh) to your use case. After editing [project_vars.sh](project_vars.sh), please clone the repo, and build the docker image. Below are example commands to do so using the conenivence scripts.
+Last, we'll install the repo. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. Start by cloning the repo locally.
 ```bash
 # clone repo source code locally
 git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
 cd sri-ta3
+```
+Next, edit the variables in [project_vars.sh](project_vars.sh) relevant to your use case. Typically, one needs to edit `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY`, `CDR_TOKEN`, `CDR_HOST`, and `NGROK_AUTHTOKEN`. After editing [project_vars.sh](project_vars.sh), build and run the docker image. Below are example commands to do so using the conenivence scripts.
+```bash
 # builds docker image (installing source in image) and pushes to docker repo
 bash docker/run_docker_build_push.sh
-```
-*If installation succeeded without errors,* you should be able to run the code locally. Before we do that, let's prepare the data within the repo used to perform CMAs. Skip to [Data Setup](<#Data-Setup>).
-
-## Data Setup
-
-### Background
-
-Our models and data cannot be directly hosted on GitHub because GitHub has a strict limit of 100 MB max file size. However, we are hosting the models and data on a Microsoft Sharepoint. To get access, please email Angel Daruna (`angel.daruna@sri.com`) or Vasily Zadorozhnyy (`vasily.zadorozhnyy@sri.com`). We are blocked from making the link public, but most email domains work. Domains that have worked include: gmail.com, mitre.org, darpa.mil, usgs.gov, uky.edu.
-
-The [raster_libraries](./data/raster_libraries) folder of this repo holds the sets of invidual rasters per CMA (see [Project Structure](#project-structure)). These individual rasters get stacked together in the preprocessing portion of our code to make a "raster stack" that is used directly for training, etc the CMA model (see [preprocessing configs](./sri_maper/configs/preprocess/)).
-
-We provide a small window of the rasters under [raster_libraries](./data/raster_libraries) used to perform the national-scale Magmatic Nickel assessment (i.e. "MaNiAC" from Hackathon 2). This raster library is titled `maniac_mini_raster_library`. However, NOT ALL DATA is provided within the repo for reasons above. Please follow the steps below to download needed data from the Microsoft Sharepoint.
-
-### Setup Data
-
-Within the Microfsoft Sharepoint (see [Background](###background)) you will see a folder titled `Input Data`. The `Input Data` folder contains all raster libraries that can be used for various CMAs. To get started with the data for the national CMAs, download and extract the `national_scale_raster_library` from the Sharepoint into your local [raster_libraries](./data/raster_libraries) folder (i.e. alongside `maniac_mini_raster_library`). *Care must be taken when downloading the data.* Sometimes Micrsoft Sharepoint will miss files, etc. Ultimately, your local copy of `national_scale_raster_library` and its subdirectories should EXACTLY match the one found on the Sharepoint.
-
-## Command-Line-Interface (CLI) Tutorial
-
-### Verify Installation and Data Setup
-
-First, *remember navigate to the environment you've built to run the code*. If you went the route of using docker to install, start your container and run a CLI (e.g. terminal) within it. The conda environment should already be activated. If you went the local install route, start your CLI (e.g. terminal) and activate your conda environment (see [Local install and run](###local-install-and-run)).
-
-With environment setup, let's run a single CLI command to make sure your install and data setup worked. The following command will train a ResNet model for the Magmatic Nickel national-scale CMA (i.e. Hackathon 2 MaNiAC):
-```
-python sri_maper/src/train.py experiment=exp_maniac_resnet_l22_uscont
-```
-If that ran without error, you can skip to [Usage](###usage) below.
-
-**Troubleshooting:** If you are getting an error, **don't panic**. There's a few common minor errors that pop up due to your local hardware / environment setup differing from those preferred at SRI.
-
-If you're seeing `MisconfigurationException('No supported gpu backend found!')`, it is possible you either have a system without a GPU or the driver for that GPU is incompatible. Instead, run the following command:
-```
-python sri_maper/src/train.py experiment=exp_maniac_resnet_l22_uscont trainer=cpu
-```
-If you're seeing `hydra.errors.InstantiationException: Error in call to target 'pytorch_lightning.loggers.wandb.WandbLogger': AuthenticationError("The API key you provided is either invalid or missing. ...`, you need to login with your [wandb](wandb.ai) account. Use the command `wandb login --relogin` do so. If you don't have a [wandb](wandb.ai) account or prefer not to make one, you can simply use a different logger. In that case, run the following command:
-```
-python sri_maper/src/train.py experiment=exp_maniac_resnet_l22_uscont logger=csv
-```
-If you're seeing, `... No such file or directory`, confirm you followed the steps in [Data Setup](###setup) exactly.
-
-If these troubleshooting steps did not resolve your problem, please contact Angel Daruna (`angel.daruna@sri.com`) or Vasily Zadorozhnyy (`vasily.zadorozhnyy@sri.com`) to troubleshoot. You can also create an issue, PR, etc.
-
-### Recreate Existing CMA Experiments
-
-Train & Test CMA models using ResNet:
-```bash
-# National Lead-Zinc MVT
-python sri_maper/src/train.py experiment=exp_mvt_resnet_l22_uscont
-# National Magmatic Nickel
-python sri_maper/src/train.py experiment=exp_maniac_resnet_l22_uscont
-# National Tungsten-skarn
-python sri_maper/src/train.py experiment=exp_w_resnet_l22_uscont
-# National Porphyry Copper
-python sri_maper/src/train.py experiment=exp_cu_resnet_l22_uscont
-# Regional Mafic Magmatic Nickel-Cobalt in Upper-Midwest
-python sri_maper/src/train.py experiment=exp_mamanico_resnet_umidwest
-# Regional Tungsten-skarn in Yukon-Tanana Upland
-python sri_maper/src/train.py experiment=exp_w_resnet_ytu
-# Regional MVT Lead-Zinc in "SMidCont"
-python sri_maper/src/train.py experiment=exp_mvt_resnet_smidcont
-```
-Pretrain, Train, and Test national-scale MVT Lead-Zinc and Tungsten-skarn CMAs using MAE:
-```bash
-# pretrains the MAE checkpoint (77 evidence layers)
-python sri_maper/src/pretrain.py experiment=exp_maevit_pretrain_l22_uscont
-# trains & tests Lead-Zinc MVT CMA model
-python sri_maper/src/train.py experiment=exp_mvt_maevit_classifier_l22_uscont model.net.backbone_ckpt=logs/PATH_TO_PRETRAINED_CHECKPOINT_ABOVE/checkpoint.ckpt
-# trains & tests Tungsten-skarn CMA model
-python sri_maper/src/train.py experiment=exp_w_maevit_classifier_l22_uscont model.net.backbone_ckpt=logs/PATH_TO_PRETRAINED_CHECKPOINT_ABOVE/checkpoint.ckpt
-```
-Pretrain, Train, and Test national-scale Magmatic Nickel CMA using MAE:
-```bash
-# pretrains the MAE checkpoint (14 evidence layers)
-python sri_maper/src/pretrain.py experiment=exp_maniac_maevit_pretrain_l22_uscont
-# trains & tests Magmatic Nickel CMA model
-python sri_maper/src/train.py experiment=exp_maniac_maevit_classifier_l22_uscont model.net.backbone_ckpt=logs/PATH_TO_PRETRAINED_CHECKPOINT_ABOVE/checkpoint.ckpt
-```
-Note: the MAE MaNiAC pretraining differs from the MVT Lead-Zinc and Tungsten-skarn ONLY because it was decided at Hackathon 2 that 14 evidence layers would be used (instead of the 77 available at national scale). One can just as easily modify the preprocessing config of the MAE MaNiAC training to use the same evidence layers at MVT Lead-Zinc and Tungsten-skarn.
-
-Pretrain, Train, and Test National Porphyry Copper CMA using MAE:
-```bash
-# pretrains the MAE checkpoint (22 evidence layers)
-python sri_maper/src/pretrain.py experiment=exp_cu_maevit_pretrain_l22_uscont
-# trains & tests Tungsten-skarn in Yukon-Tanana Upland
-python sri_maper/src/train.py experiment=exp_cu_maevit_classifier_l22_uscont model.net.backbone_ckpt=logs/PATH_TO_PRETRAINED_CHECKPOINT_ABOVE/checkpoint.ckpt
-```
-Pretrain, Train, and Test regional-scale Mafic Magmatic Nickel-Cobalt in Upper-Midwest CMA using MAE:
-```bash
-# pretrains the MAE checkpoint (28 evidence layers)
-python sri_maper/src/pretrain.py experiment=exp_mamanico_maevit_pretrain_umidwest
-# trains & tests Mafic Magmatic Nickel-Cobalt in Upper-Midwest
-python sri_maper/src/train.py experiment=exp_mamanico_maevit_classifier_umidwest model.net.backbone_ckpt=logs/PATH_TO_PRETRAINED_CHECKPOINT_ABOVE/checkpoint.ckpt
-```
-Pretrain, Train, and Test regional-scale Tungsten-skarn in Yukon-Tanana Upland CMA using MAE:
-```bash
-# pretrains the MAE checkpoint (18 evidence layers)
-python sri_maper/src/pretrain.py experiment=exp_w_maevit_pretrain_ytu
-# trains & tests Tungsten-skarn in Yukon-Tanana Upland
-python sri_maper/src/train.py experiment=exp_w_maevit_classifier_ytu model.net.backbone_ckpt=logs/PATH_TO_PRETRAINED_CHECKPOINT_ABOVE/checkpoint.ckpt
-```
-Pretrain, Train, and Test regional-scale MVT Lead-Zinc in "SMidCont" CMA using MAE:
-```bash
-# pretrains the MAE checkpoint (18 evidence layers)
-python sri_maper/src/pretrain.py experiment=exp_mvt_maevit_pretrain_smidcont
-# trains & tests Tungsten-skarn in Yukon-Tanana Upland
-python sri_maper/src/train.py experiment=exp_mvt_maevit_classifier_smidcont model.net.backbone_ckpt=logs/PATH_TO_PRETRAINED_CHECKPOINT_ABOVE/checkpoint.ckpt
-```
-
-### Build Maps with Trained Models
-
-In the Microsoft Sharepoint folder (see Background under [Data Setup](##data-setup)) we provide trained classification model checkpoints for all existing experiments. Please download the corresponding model checkpoints you would like to use and place them in the [ckpts](./sri_maper/ckpts/) folder. The commands below show how to build the prospectivity map for each CMA using the model checkpoint.
-
-Pretrained model performance using defined experiment configs:
-| **F1-score**       | **ResNet** | **MAE** |
-|--------------------|------------|---------|
-| Lead-Zinc MVT national | 61.5       | 68.6    |
-| Magmatic Nickel national | 85.7       | 86.5    |
-| Tungsten-skarn national | 55.8       | 61.1    |
-| Porphyry Copper national | 57.6       | 60.3    |
-| Mafic Magmatic Nickel-Cobalt in Upper-Midwest     | 33.3       | 60.0    |
-| Tungsten-skarn in Yukon-Tanana Upland     | 35.3       | 40.0    |
-
-Build prospectivity maps using ResNet model checkpoints:
-```bash
-# national Lead-Zinc MVT
-python sri_maper/src/map.py experiment=exp_mvt_resnet_l22_uscont data.batch_size=128 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_mvt_resnet.ckpt
-# national Magmatic Nickel
-python sri_maper/src/map.py experiment=exp_maniac_resnet_l22_uscont data.batch_size=128 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_maniac_resnet.ckpt
-# national Tungsten-skarn
-python sri_maper/src/map.py experiment=exp_w_resnet_l22_uscont data.batch_size=128 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_w_resnet.ckpt
-# national Porphyry Copper
-python sri_maper/src/map.py experiment=exp_cu_resnet_l22_uscont data.batch_size=128 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_cu_resnet.ckpt
-# regional Mafic Magmatic Nickel-Cobalt in Upper-Midwest
-python sri_maper/src/map.py experiment=exp_mamanico_resnet_umidwest data.batch_size=128 enable_attributions=True ckpt_path=sri_maper/ckpts/umidwest_mamanico_resnet.ckpt
-# regional Tungsten-skarn in Yukon-Tanana Upland
-python sri_maper/src/map.py experiment=exp_w_resnet_ytu data.batch_size=128 enable_attributions=True ckpt_path=sri_maper/ckpts/ytu_w_resnet.ckpt
-# regional MVT Lead-Zinc in "SMidCont"
-python sri_maper/src/map.py experiment=exp_mvt_resnet_smidcont data.batch_size=128 enable_attributions=True ckpt_path=sri_maper/ckpts/exp_mvt_resnet_smidcont.ckpt
-```
-Build prospectivity maps using MAE model checkpoints:
-```bash
-# national Lead-Zinc MVT
-python sri_maper/src/map.py experiment=exp_mvt_maevit_classifier_l22_uscont model.net.backbone_ckpt=sri_maper/ckpts/natl_pretrain.ckpt data.batch_size=64 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_mvt_mae.ckpt
-# national Magmatic Nickel
-python sri_maper/src/map.py experiment=exp_maniac_maevit_classifier_l22_uscont model.net.backbone_ckpt=sri_maper/ckpts/natl_pretrain_maniac.ckpt data.batch_size=64 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_maniac_mae.ckpt
-# national Tungsten-skarn
-python sri_maper/src/map.py experiment=exp_w_maevit_classifier_l22_uscont model.net.backbone_ckpt=sri_maper/ckpts/natl_pretrain.ckpt data.batch_size=64 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_w_mae.ckpt
-# national Porphyry Copper
-python sri_maper/src/map.py experiment=exp_cu_maevit_classifier_l22_uscont model.net.backbone_ckpt=sri_maper/ckpts/natl_pretrain_cu.ckpt data.batch_size=64 enable_attributions=True ckpt_path=sri_maper/ckpts/natl_cu_mae.ckpt
-# regional Mafic Magmatic Nickel-Cobalt in Upper-Midwest
-python sri_maper/src/map.py experiment=exp_mamanico_maevit_classifier_umidwest model.net.backbone_ckpt=sri_maper/ckpts/umidwest_mamanico_pretrain.ckpt data.batch_size=64 enable_attributions=True ckpt_path=sri_maper/ckpts/umidwest_mamanico_mae.ckpt
-# regional Tungsten-skarn in Yukon-Tanana Upland
-python sri_maper/src/map.py experiment=exp_w_maevit_classifier_ytu model.net.backbone_ckpt=sri_maper/ckpts/ytu_w_pretrain.ckpt data.batch_size=64 enable_attributions=True ckpt_path=sri_maper/ckpts/ytu_w_mae.ckpt
-# regional MVT Lead-Zinc in "SMidCont"
-python sri_maper/src/map.py experiment=exp_mvt_maevit_classifier_smidcont model.net.backbone_ckpt=sri_maper/ckpts/smidcont_mvt_pretrain.ckpt data.batch_size=64 enable_attributions=True ckpt_path=sri_maper/ckpts/smidcont_mvt_mae.ckpt
-```
-### General Usage
-
-It is important to remember, this tool IS EXTENSIBLE. The particular experiments for existing CMAs we provide are examples to use MAPER. HOWEVER, MAPER is built to be fully controlled from the experiment configuration. This design supports integration across TAs and offers the domain experts full control over MAPER **without modifying source code, notebook files, etc**. Below is a more general background of commands one can use with MAPER's CLI
-
-Using the CLI is the suggested method of integration into the MAPER code. As additional documentation, we provide [example notebook files](./sri_maper/notebooks/) that use the CLI internally within the jupyter notebook files. However, all actions performed in the jupyter notebook can be performed with the CLI (the notebooks just call the CLI functions internally). We suggest viewing the notebooks files as is (i.e. without running) to understand the CLI, then experiment with using the CLI directly. 
-
-Below we give examples of the `train`, `test`, `map`, and `pretrain` capabilties through the CLI. The section that follows gives background about the example notebook files.
-
-You can choose your training hardware like this:
-
-```bash
-# train on CPU
-python sri_maper/src/train.py trainer=cpu
-
-# train on GPU
-python sri_maper/src/train.py trainer=gpu
-
-# train on multi-GPU
-python sri_maper/src/train.py trainer=ddp
-```
-
-You can run a predefined experiment from [configs/experiment/](configs/experiment/) like this:
-
-```bash
-python sri_maper/src/train.py experiment=[example]
-```
-
-You can override any parameter from command line like this
-
-```bash
-python sri_maper/src/train.py trainer.max_epochs=20 data.batch_size=64
-```
-
-You can pretain a model like this
-
-```bash
-python sri_maper/src/pretrain.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
-```
-
-You can test an existing checkpoint like this
-
-```bash
-python sri_maper/src/test.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
-```
-
-You can build prospectivity maps using an existing model checkpoint like this:
-```bash
-python sri_maper/src/map.py +experiment=[example] ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
-```
-
-### How It Works - Background about CLI
-
-All PyTorch Lightning modules are dynamically instantiated from module paths specified in config using Hydra. Example model config:
-
-```yaml
-_target_: src.models.mnist_model.MNISTLitModule
-lr: 0.001
-net:
-  _target_: src.models.components.simple_dense_net.SimpleDenseNet
-  input_size: 784
-  lin1_size: 256
-  lin2_size: 256
-  lin3_size: 256
-  output_size: 10
-```
-
-Using this config we can instantiate the object with the following line in the source code:
-
-```python
-model = hydra.utils.instantiate(config.model)
-```
-
-This allows the user to fully control MAPER without modifying source code! Every parameter within the config provides a direct interface to the source code. Therefore, by modifying the config, you modify the parameters used in the source code. As a result, a GUI can be readily built up around this conig.
-
-Example pipeline managing the instantiation logic: [src/train.py](src/train.py).
-
-## Notebook Tutorial
-
-As additional documentation, we provide [example notebook files](./sri_maper/notebooks/) that use the CLI internally. However, **all actions performed in the jupyter notebook can be performed with the CLI (the notebooks just call the CLI functions internally)**. We suggest viewing the notebooks files as is (i.e. without running) to understand the CLI (above) and what expected outputs are, then experiment with using the CLI directly.
-
-Depending on your install approach, you will need to take different steps to start jupyter and view the example notebooks. Below are example commands to do so using the conenivence scripts.
-
-### Local install and run
-```bash
-# make sure your conda environment is activated
-jupyter lab
-```
-### Install with docker container that is run locally
-```bash
-# starts the docker container
+# runs docker image
 bash docker/run_docker_local.sh
-##### EXECUTED WITHIN THE DOCKER CONTIAINER #####
-# begins jupyter notebook
-jupyter lab --ip 0.0.0.0 --allow-root --NotebookApp.token='' --no-browser
-# now you can access the notebook files by browsing to http://localhost:8888/lab
 ```
-### Install with docker container that is run on the SRI International Kubernetes cluster
+
+*If installation succeeded without errors,* you should be able to run the SRI TA3 server. Skip to [SRI TA3 server](<#SRI-TA3-server>).
+
+## SRI TA3 server
+Assuming the installation above succeeded. You should now be in a bash terminal that can run the SRI TA3 server now. Run the following to start the server:
 ```bash
-# starts the docker container
-bash docker/run_docker_k8s.sh
-# jupter lab is already running, browse to http://localhost:8888/lab
-# note, you'll want to forward the Kubernetes container port 8888
+python sri_maper/src/server.py
 ```
+If the server runs successfully, it will register with the configured [CDR](https://github.com/DARPA-CRITICALMAAS/cdr) instance and then wait for mineral assessment job requests to be made via the [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) instance. The output should be similar to the following:
+```bash
+Registering with CDR
+Starting TA3 server
+INFO:     Started server process [9378]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:80 (Press CTRL+C to quit)
+```
+You can now start mineral assessments by interacting with the [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) GUI at https://statmagic.mtri.org/
 
-After following the correct route to start jupyter above, you can view the notebooks and OPTIONALLY run them.
-
-#### To Do: DocStrings on entire repo
+Below is a video demonstrating how the SRI TA3 server processes a mineral assessment job initiated from the StatMagic GUI:
