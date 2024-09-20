@@ -23,7 +23,7 @@ from sri_maper.src.train import train
 from sri_maper.src.map import build_map
 
 
-def run_ta3_pipeline(event_id, app_settings):
+def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
     print("Querying CDR for event.")
     model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
 
@@ -159,8 +159,6 @@ def clean_up():
 
 # register clean_up
 atexit.register(clean_up)
-
-
 
 
 # Get ngrok to give us an endpoint
