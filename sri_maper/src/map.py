@@ -1,11 +1,9 @@
 from typing import List, Optional, Tuple
 import hydra
 from omegaconf import DictConfig
-from torch import set_float32_matmul_precision
-from torch.distributed import get_rank
+from torch import set_float32_matmul_precision, concat as pt_concat
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import Logger
-import pandas as pd
 
 from sri_maper.src import utils
 
@@ -53,7 +51,7 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
         utils.log_hyperparameters(object_dict)
 
     # preparation
-    model = model.__class__.load_from_checkpoint(cfg.ckpt_path)
+    model = model.__class__.load_from_checkpoint(cfg.ckpt_path, net=model.net)
     
     if "strategy" not in cfg.get("trainer") and model.net.contains_sync_batchnorm():
         # multi-GPU/CPU process train to single GPU/CPU process inference fix
@@ -73,20 +71,14 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
     model.hparams.extract_attributions = cfg.model.extract_attributions
 
     log.info("Starting map build!")
-    trainer.predict(model=model, datamodule=datamodule)
-    
+    predictions = trainer.predict(model=model, datamodule=datamodule)
+    predictions = utils.collect_gpu_results(pt_concat(predictions).cpu().numpy(), trainer)
     log.info(f"GPU:{trainer.strategy.global_rank} finished!")
     map_paths = None
     if trainer.strategy.global_rank == 0:
         log.info(f"GPU:{trainer.strategy.global_rank} is outputting map GeoTiff!")
-        # read all GPU CSVs
-        res_df = []
-        for n in range(trainer.strategy.world_size):
-            res_df.append(pd.read_csv(f"gpu_{n}_result.csv", index_col=False))
-        res_df = pd.concat(res_df, ignore_index=True)
-        
         tif_file_path = f"{cfg.paths.output_dir}"
-        map_paths = utils.write_tif(res_df.values, tif_file_path, cfg.enable_attributions, datamodule)
+        map_paths = utils.write_tif(predictions, tif_file_path, cfg.enable_attributions, datamodule)
 
     return map_paths, object_dict
 

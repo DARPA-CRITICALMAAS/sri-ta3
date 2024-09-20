@@ -2,6 +2,7 @@ import torch
 from timm.models.layers import trunc_normal_
 from timm.models.vision_transformer import Block
 from einops.layers.torch import Rearrange
+from typing import Union, Tuple
 
 from sri_maper.src import utils
 
@@ -10,11 +11,11 @@ class PatchDropLayer(torch.nn.Module):
     def __init__(self, ratio) -> None:
         super().__init__()
         self.ratio = ratio
-    
+
     def forward(self, patches : torch.Tensor):
         B, L, D = patches.shape  # batch, length, dim
         len_keep = int(L * (1 - self.ratio))
-        
+
         # sorts noise for each sample
         noise = torch.rand(B, L, device=patches.device)
         shuffle = torch.argsort(noise, dim=1)
@@ -43,7 +44,7 @@ class MAE_Encoder(torch.nn.Module):
         num_head:      int = 3,
         mask_ratio:    float = 0.0,
     ) -> None:
-        
+
         super().__init__()
 
         # inits learned CLS token
@@ -53,9 +54,9 @@ class MAE_Encoder(torch.nn.Module):
         # inits learned patch embedding
         self.patch_embedding = torch.nn.Sequential(
             torch.nn.Conv2d(
-                in_channels=input_dim, 
-                out_channels=emb_dim, 
-                kernel_size=patch_size, 
+                in_channels=input_dim,
+                out_channels=emb_dim,
+                kernel_size=patch_size,
                 stride=patch_size
             ),
             torch.nn.Flatten(start_dim=2)
@@ -99,7 +100,7 @@ class MAE_Decoder(torch.nn.Module):
         num_layer:     int = 4,
         num_head:      int = 3,
     ) -> None:
-        
+
         super().__init__()
 
         # inits projection to decoder dim
@@ -141,18 +142,18 @@ class MAE_Decoder(torch.nn.Module):
 
 class MAE_ViT(torch.nn.Module):
     def __init__(self,
-                 image_size:        int = 33,
-                 patch_size:        int = 11,
-                 input_dim:         int = 73,
-                 enc_dim:           int = 192,
-                 dec_dim:           int = 192,
-                 output_dim:        int = 73,
-                 encoder_layer:     int = 12,
-                 encoder_head:      int = 3,
-                 decoder_layer:     int = 4,
-                 decoder_head:      int = 3,
-                 mask_ratio:        float = 0.0,
-                 ) -> None:
+                    image_size:        int = 33,
+                    patch_size:        int = 11,
+                    input_dim:         int = 73,
+                    enc_dim:           int = 192,
+                    dec_dim:           int = 192,
+                    output_dim:        int = 73,
+                    encoder_layer:     int = 12,
+                    encoder_head:      int = 3,
+                    decoder_layer:     int = 4,
+                    decoder_head:      int = 3,
+                    mask_ratio:        float = 0.0,
+        ) -> None:
         super().__init__()
         self.image_size = image_size
         self.patch_size = patch_size
@@ -164,14 +165,18 @@ class MAE_ViT(torch.nn.Module):
         # inits layer to merge patches into image
         self.patch2img = Rearrange('b (h w) (c p1 p2) -> b c (h p1) (w p2)', p1=patch_size, p2=patch_size, h= image_size // patch_size)
 
-    def forward(self, img):
+    def forward(self,
+                img: torch.Tensor,
+                pca_matrix: Union[torch.Tensor, None]=None
+        ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        img_input = torch.einsum('ijkl,ijm->imkl', img, pca_matrix) if pca_matrix is not None else img
         # encodes image patches
-        features, mask, restore = self.encoder(img)
+        features, mask, restore = self.encoder(img_input)
         # reconstructs encoded image patches
         predicted_img = self.decoder(features,  restore)
         # returns combined patches into images
-        return self.patch2img(predicted_img), self.patch2img(mask.unsqueeze(-1).repeat(1, 1, predicted_img.shape[-1]))
-    
+        return img_input, self.patch2img(predicted_img), self.patch2img(mask.unsqueeze(-1).repeat(1, 1, predicted_img.shape[-1]))
+
     def contains_sync_batchnorm(self):
         # checks for SynBatchNorms
         return utils.contains_sync_batchnorm(self.encoder) or utils.contains_sync_batchnorm(self.decoder) # false

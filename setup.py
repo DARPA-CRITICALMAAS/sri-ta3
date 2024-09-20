@@ -6,6 +6,7 @@ https://packaging.python.org/guides/distributing-packages-using-setuptools/
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
 import pathlib
+import os
 
 here = pathlib.Path(__file__).parent.resolve()
 
@@ -32,11 +33,11 @@ setup(
     # For a discussion on single-sourcing the version across setup.py and the
     # project code, see
     # https://packaging.python.org/guides/single-sourcing-package-version/
-    version="0.0.1",  # Required
+    version=os.getenv("SYSTEM_VERSION"),  # Required
     # This is a one-line description or tagline of what your project does. This
     # corresponds to the "Summary" metadata field:
     # https://packaging.python.org/specifications/core-metadata/#summary
-    description="SRI MAPER: MultimodAl Physics-guided Embedding for critical minERal mapping",  # Optional
+    description=os.getenv("SYSTEM_DESCRIPTION"),  # Optional
     # This is an optional longer description of your project that represents
     # the body of text which users will see when they visit PyPI.
     #
@@ -110,7 +111,8 @@ setup(
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/discussions/install-requires-vs-requirements/
     install_requires = [
-        "pytorch-lightning>=1.9.4,<2.0.0",
+        "pytorch-lightning>2.2",
+        "torchvision>=0.18.1",
         "torchinfo",
         "timm",
         "torchmetrics>=0.11.4",
@@ -131,6 +133,12 @@ setup(
         "ipywidgets",
         "scikit-learn",
         "imbalanced-learn",
+        "cdr_schemas @ git+https://github.com/DARPA-CRITICALMAAS/cdr_schemas.git@v0.4.5",
+        "python-dotenv",
+        "pydantic_settings",
+        "fastapi",
+        "ngrok",
+        "uvicorn"
     ],
 
     # List additional groups of dependencies here (e.g. development

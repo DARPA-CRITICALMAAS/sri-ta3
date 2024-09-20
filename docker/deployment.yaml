@@ -2,15 +2,15 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   namespace: ${NAMESPACE}
-  name: ${PROJECT_NAME}${JOB_TAG}
+  name: ${SYSTEM_NAME}${JOB_TAG}
   labels:
-    app: ${PROJECT_NAME}${JOB_TAG}
+    app: ${SYSTEM_NAME}${JOB_TAG}
     type: ${MODE}
 spec:
   template:
     metadata:
       labels:
-        app: ${PROJECT_NAME}${JOB_TAG}
+        app: ${SYSTEM_NAME}${JOB_TAG}
     spec:
       affinity:
         nodeAffinity:
@@ -40,8 +40,8 @@ spec:
       imagePullSecrets:
       - name: ${SECRET}
       containers:
-        - name: ${PROJECT_NAME}
-          image: ${REPO_HOST}/${REPO}:${PROJECT_NAME}-${DUSER}-v${VERSION}
+        - name: ${SYSTEM_NAME}
+          image: ${REPO_HOST}/${REPO}:${SYSTEM_NAME}-${DUSER}-v${SYSTEM_VERSION}
 
           workingDir: /workspace
           resources:
@@ -63,10 +63,10 @@ spec:
             - name: rw-vol
               subPath: ${DUSER}/code/${K8_SRC_PATH}
               mountPath: /workspace/${SRC_PATH}
-            
+
             # shared directory for storing data
-            - name: ro-vol
-              subPath: data
+            - name: rw-vol
+              subPath: ${DUSER}/data
               mountPath: /workspace/data
 
             # Working directory for checkpoints, output, etc.
@@ -85,3 +85,23 @@ spec:
                   fieldPath: metadata.name
             - name: WANDB_API_KEY
               value: ${WANDB_API_KEY}
+            - name: SYSTEM_NAME
+              value: ${SYSTEM_NAME}
+            - name: SYSTEM_VERSION
+              value: ${SYSTEM_VERSION}
+            - name: SYSTEM_DESCRIPTION
+              value: ${SYSTEM_DESCRIPTION}
+            - name: CDR_TOKEN
+              value: ${CDR_TOKEN}
+            - name: CDR_HOST
+              value: ${CDR_HOST}
+            - name: NGROK_AUTHTOKEN
+              value: ${NGROK_AUTHTOKEN}
+            - name: NGROK_SECRET
+              value: ${NGROK_SECRET}
+            - name: NGROK_PORT
+              value: "${NGROK_PORT}"
+            - name: MODEL_NAME
+              value: ${MODEL_NAME}
+            - name: MODEL_VERSION
+              value: "${MODEL_VERSION}"

@@ -79,7 +79,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         
         # preparation
         log.info(f"Best ckpt path: {ckpt_path}")
-        model = model.__class__.load_from_checkpoint(ckpt_path)
+        model = model.__class__.load_from_checkpoint(ckpt_path, net=model.net)
 
         # temperature scaling
         if "temperature" not in cfg.model:

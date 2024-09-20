@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Union
 
 import torch
 import torch.nn as nn
@@ -14,6 +14,7 @@ class ANN(nn.Module):
             image_size: int = 5,
             num_output_classes: int = 1,
             dropout_rate: Optional[List[float]] = [0.0, 0.25, 0.25],
+            out_bias: bool = False,
     ) -> None:
         super().__init__()
 
@@ -31,15 +32,23 @@ class ANN(nn.Module):
 
             torch.nn.PReLU(),
             torch.nn.Dropout(p=dropout_rate[2]),
-            torch.nn.Linear(num_input_channels//4, num_output_classes, bias=False)
+            torch.nn.Linear(num_input_channels//4, num_output_classes, bias=out_bias)
         )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x[:, :, self.image_size//2, self.image_size//2]
-        return self.classifier(x)
+        self.frozen_embedding = None
+    
+    def forward(
+            self, 
+            img: torch.Tensor,
+            row: torch.Tensor, 
+            col: torch.Tensor,
+            pca_matrix: Union[torch.Tensor, None] = None
+        ) -> torch.Tensor:
+        img_input = torch.einsum('ijkl,ijm->imkl', img, pca_matrix) if pca_matrix is not None else img
+        img_input = img_input[:, :, self.image_size//2, self.image_size//2]
+        return self.classifier(img_input)
 
     def activate_dropout(self):
-        for m in self.ff:
+        for m in self.classifier:
             if m.__class__.__name__.startswith('Dropout'):
                 m.train()
 

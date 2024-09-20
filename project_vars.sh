@@ -3,15 +3,26 @@
 # docker project variables
 ################################################
 export NAMESPACE="criticalmaas-ta3"
-export PROJECT_NAME="cmaas-ta3"
-export VERSION=0.0
+export SYSTEM_NAME="sri-maper"
+export SYSTEM_VERSION="0.0.1"
+export SYSTEM_DESCRIPTION="SRI MAPER - Mineral Assessment Platform with Explainable Representations"
+export MODEL_NAME="MAE"
+export MODEL_VERSION="0.0.1"
+################################################
+# the token that is used to authenticate with the CDR
+################################################
+export CDR_TOKEN=""
+export CDR_HOST="https://api.cdr.land"
+export NGROK_AUTHTOKEN=""
+export NGROK_SECRET=""
+export NGROK_PORT="80"
 ################################################
 # docker user variables
 ################################################
-export JOB_TAG= # meaninful name for THIS job e.g. "-dev"
-export REPO_HOST= # docker repo e.g. "open.docker.sarnoff.com"
+export JOB_TAG="-dev-cdr-integration-test" # meaninful name for THIS job e.g. "-dev"
+export REPO_HOST="open.docker.sarnoff.com" # docker repo e.g. "open.docker.sarnoff.com"
 export DUSER=${USER} # username, default is for SRI's setup
-export WANDB_API_KEY="YOUR_WANDB_KEY"
+export WANDB_API_KEY=""
 ################################################
 # running docker locally variables
 ################################################
@@ -26,7 +37,7 @@ export SRC_PATH=sri_maper
 export NGPU=1
 export GPU_TYPE="A5000" # "2080Ti" "A5000"
 export TOTAL_CPU=8
-export TOTAL_MEM=40
+export TOTAL_MEM=64
 export MODE="run"
 export SECRET="docker-io-secret"
 export K8_SRC_PATH=$(basename ${PROJ_ROOT})/${SRC_PATH}

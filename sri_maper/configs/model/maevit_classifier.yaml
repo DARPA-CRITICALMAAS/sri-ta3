@@ -16,8 +16,8 @@ scheduler:
 net:
   _target_: sri_maper.src.models.mae_vit_classifier.CLSClassifier
   backbone_ckpt: null
+  backbone_ckpt_embeddings: null
   backbone_net: null
-  freeze_backbone: true
   dropout_rate: 0.0
 
 # compile model for faster training with pytorch 2.0
@@ -29,3 +29,5 @@ extract_attributions: ${enable_attributions}
 mc_samples: 100
 
 smoothing: 0.1
+
+pretrained_state_dict_keys: ["frozen_embedding","frozen_backbone"]

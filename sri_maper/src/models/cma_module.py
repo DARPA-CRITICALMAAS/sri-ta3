@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Union
 
 import torch
 from pytorch_lightning import LightningModule
@@ -56,19 +56,28 @@ class CMALitModule(LightningModule):
         threshold: float = 0.5,
         temperature: float = 1.0,
         extract_attributions: bool = True,
+        pretrained_state_dict_keys: Tuple[str] = (),
     ) -> None:
-        """Initialize a `MNISTLitModule`.
+        """Initialize a `CMALitModule`.
 
         :param net: The model to train.
         :param optimizer: The optimizer to use for training.
         :param scheduler: The learning rate scheduler to use for training.
+        :param compile: Whether to compile the model.
         :param gain: The weight on the positive class, helps with dataset inbalance.
+        :param mc_samples: The number of Monte-Carlo samples to generate.
+        :param smoothing: The label smoothing factor.
+        :param threshold: The threshold for binary classification. Defaults to `0.5`.
+        :param temperature: The temperature for calibrated predictions. Defaults to `1.0`.
+        :param extract_attributions: Whether to extract feature attributions. Defaults to `True`.
         """
         super().__init__()
-        # self.example_input_array = torch.Tensor(16, 23, 33, 33)
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
-        self.save_hyperparameters(logger=False)
+        self.save_hyperparameters(logger=False, ignore=["net"])
+
+        # enables more flexible checkpointing
+        self.strict_loading = False
 
         self.net = net
 
@@ -100,24 +109,47 @@ class CMALitModule(LightningModule):
         # for tracking best so far validation AUC
         self.val_auc_best = MaxMetric()
         self.val_auprc_best = MaxMetric()
+    
+    def on_save_checkpoint(self, checkpoint):
+        del_k = []
+        for k in checkpoint['state_dict'].keys():
+            for ignore_key in self.hparams.pretrained_state_dict_keys:
+                if ignore_key in k:
+                    del_k.append(k)
+                    break
+        for k in del_k: del checkpoint['state_dict'][k]
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, 
+        x: torch.Tensor,
+        cols: torch.Tensor,
+        rows: torch.Tensor,
+        pca_matrix: Union[torch.Tensor, None] = None,
+    ) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
 
         :param x: The input tensor for forward pass (i.e. window from the datacube).
+        :param pca_matrix: The PCA matrix to apply to the input tensor. (optional)
 
         :return: A tensor of logits.
         """
-        return self.net(x)
+        return self.net(x, cols, rows, pca_matrix)
 
-    def calibrated_forward(self, x: torch.Tensor) -> torch.Tensor:
+    def calibrated_forward(
+        self, 
+        x: torch.Tensor,
+        cols: torch.Tensor,
+        rows: torch.Tensor,
+        pca_matrix: Union[torch.Tensor, None] = None,
+    ) -> torch.Tensor:
         """Perform a calibrated forward pass through the model `self.net`.
 
         :param x: The input tensor for forward pass (i.e. window from the datacube).
+        :param pca_matrix: The PCA matrix to apply to the input tensor. (optional)
 
         :return: A tensor of calibrated logits.
         """
-        return self.net(x) / torch.tensor(self.hparams.temperature).to(x)
+        return self.net(x, cols, rows, pca_matrix) / torch.tensor(self.hparams.temperature).to(x)
 
     def on_train_start(self) -> None:
         """Lightning hook that is called when training begins."""
@@ -128,7 +160,7 @@ class CMALitModule(LightningModule):
         self.val_auc_best.reset()
 
     def model_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], calibrated: bool = False
+        self, batch: Tuple[torch.Tensor], calibrated: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a single model step on a batch of data.
 
@@ -141,17 +173,20 @@ class CMALitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        x, y = batch
+        x, y, _, _, cols, rows, pca_matrix = batch
+        pca_matrix = pca_matrix.detach().half() if len(pca_matrix.shape) != 1 else None
+
         if calibrated:
-            logits = self.calibrated_forward(x)
+            logits = self.calibrated_forward(x, cols, rows, pca_matrix)
         else:
-            logits = self.forward(x)
+            logits = self.forward(x, cols, rows, pca_matrix)
+
         loss = self.criterion(logits, y.unsqueeze(1) * (1.0 - self.hparams.smoothing) + 0.5 * self.hparams.smoothing)
         preds = torch.sigmoid(logits)
         return loss, preds.detach(), y.detach()
 
     def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         """Perform a single training step on a batch of data from the training set.
 
@@ -173,7 +208,7 @@ class CMALitModule(LightningModule):
         "Lightning hook that is called when a training epoch ends."
         pass
 
-    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
+    def validation_step(self, batch: Tuple[torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
 
         :param batch: A batch of data (a tuple) containing (in order) the input tensor, target
@@ -186,9 +221,9 @@ class CMALitModule(LightningModule):
         self.val_loss(loss.item())
         self.val_auc(preds, targets)
         self.val_auprc(preds.squeeze(), targets.squeeze().to(torch.int))
-        self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/loss",    self.val_loss,  on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auc",     self.val_auc,   on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auprc",   self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
@@ -198,10 +233,10 @@ class CMALitModule(LightningModule):
         self.val_auprc_best(auprc)
         # log `val_auc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
-        self.log("val/auc_best", self.val_auc_best.compute(), sync_dist=True, prog_bar=True)
-        self.log("val/auprc_best", self.val_auprc_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/auc_best",    self.val_auc_best.compute(),    sync_dist=True, prog_bar=True)
+        self.log("val/auprc_best",  self.val_auprc_best.compute(),  sync_dist=True, prog_bar=True)
 
-    def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
+    def test_step(self, batch: Tuple[torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -221,21 +256,21 @@ class CMALitModule(LightningModule):
         self.test_recall(preds.squeeze(), targets)
         self.test_acc1(preds.squeeze(), torch.ones_like(preds.squeeze()))
 
-        self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/bal_acc", self.test_bal_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/mcc", self.test_mcc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/f1", self.test_f1, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/recall", self.test_recall, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/prob1", self.test_acc1, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/loss",    self.test_loss,      on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/auc",     self.test_auc,       on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/auprc",   self.test_auprc,     on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/bal_acc", self.test_bal_acc,   on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc",     self.test_acc,       on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/mcc",     self.test_mcc,       on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/f1",      self.test_f1,        on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/recall",  self.test_recall,    on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/prob1",   self.test_acc1,      on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
         pass
 
-    def predict_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
+    def predict_step(self, batch: Tuple[torch.Tensor], batch_idx: int) -> None:
         """Perform a single predict step on a batch of data from the predict set.
 
         :param batch: A batch of data (a tuple) containing (in order) the input tensor, target
@@ -249,11 +284,24 @@ class CMALitModule(LightningModule):
             - Prediction Uncertainty
             - Prediction Feature Attributions
         """
+        patch, _, lon, lat, col, row, pca_matrix = batch
 
         # extracts feature attributions
         if self.hparams.extract_attributions:
+            # DEBUG add a check to enable extract_attributions with embedding model
             ig = IntegratedGradients(self.net)
-            attribution = ig.attribute(batch[0].requires_grad_(), n_steps=12).mean(dim=(-1,-2)).detach()
+            if len(pca_matrix.shape) != 1:
+                attribution = ig.attribute(
+                    patch.requires_grad_(),
+                    additional_forward_args=(col, row, pca_matrix.half()), 
+                    n_steps=12
+                ).mean(dim=(-1,-2)).detach()
+            else:
+                attribution = ig.attribute(
+                    patch.requires_grad_(), 
+                    additional_forward_args=(col, row),
+                    n_steps=12
+                ).mean(dim=(-1,-2)).detach()
 
         # enables Monte Carlo Dropout
         if self.hparams.mc_samples > 1:
@@ -262,7 +310,10 @@ class CMALitModule(LightningModule):
         # generates MC samples
         preds = torch.sigmoid(
             self.calibrated_forward(
-                batch[0].tile((self.hparams.mc_samples,1,1,1))
+                patch.tile((self.hparams.mc_samples,1,1,1)),
+                col.tile((self.hparams.mc_samples)),
+                row.tile((self.hparams.mc_samples)),
+                pca_matrix.tile((self.hparams.mc_samples,1,1)).half() if len(pca_matrix.shape)!=1 else None
             ).reshape(self.hparams.mc_samples,-1)
         ).detach()
 
@@ -270,23 +321,9 @@ class CMALitModule(LightningModule):
         means = preds.mean(dim=0).squeeze()
         stds = preds.std(dim=0).squeeze()
 
-        results = torch.stack((batch[2], batch[3], means, stds), dim=-1)
+        results = torch.stack((lon, lat, means, stds), dim=-1)
         if self.hparams.extract_attributions: results = torch.concat((results, attribution), dim=-1)
         return results
-
-    def on_predict_epoch_end(self, results):
-        results = torch.concat(results[0]).cpu().numpy()
-        cols = ["lon","lat","mean","std"] + [f"attr{n}" for n in range(results.shape[-1]-4)]
-        res_df = pd.DataFrame(data=results, columns=cols)
-        res_df.to_csv(f"gpu_{self.trainer.strategy.global_rank}_result.csv",index=False)
-        self.trainer.strategy.barrier()
-
-        # TODO DEBUG following
-        # if self.trainer.strategy.world_size > 1:
-            # num_dims = results.shape[-1]
-            # results = self.all_gather(results).reshape((-1,num_dims))
-        # if self.trainer.strategy.global_rank == 0:
-            # self.trainer.results = results.cpu().numpy()
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

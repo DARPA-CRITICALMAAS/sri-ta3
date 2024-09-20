@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - override /preprocess: mamanico-upmidwest.yaml
+  - override /preprocess: default.yaml
   - override /model: maevit_pretrain
   - override /trainer: ddp
   - override /callbacks: default
@@ -9,22 +9,22 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["vit", "mae-vit-pretrain", "umidwest", "mamanico"]
-task_name: "cmta3-pretrain-maevit"
+tags: ["some", "tags"]
+task_name: "task_name"
 
 seed: 1234
 
 data:
   window_size: 5
   batch_size: 1024
-  tif_dir: ${paths.data_dir}/H3/mamanico
+  tif_dir: "raster stack directory"
   downsample: false
   oversample: false
   frac_train_split: 0.9
 
 model:
   net:
-    input_dim: 28
+    input_dim: 0
 
 trainer:
   min_epochs: 10
@@ -37,7 +37,7 @@ trainer:
 
 logger:
   wandb:
-    name: "maevit_pretrain_mamnico_upmidwest"
+    name: "wandb description"
 
 callbacks:
   model_checkpoint:

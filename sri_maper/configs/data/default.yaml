@@ -6,7 +6,7 @@ multiplier: 20
 downsample: true
 oversample: true
 likely_neg_range: [0.25,0.75]
-frac_train_split: 0.5
+frac_train_split: 0.8
 # training params
 batch_size: 32
 num_workers: 12

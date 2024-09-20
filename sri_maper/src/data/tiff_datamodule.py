@@ -62,7 +62,7 @@ class TIFFDataModule(LightningDataModule):
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
-        window_size: int = 33,
+        window_size: int = 5,
         multiplier: int = 20,
         downsample: bool = True,
         oversample: bool = True,
@@ -70,27 +70,34 @@ class TIFFDataModule(LightningDataModule):
         likely_neg_range: List[float] = [0.25,0.75],
         frac_train_split: float = 0.5,
         specified_split: Optional[List[List[float]]] = None,
+        num_pca_components: Optional[int] = None,
+        in_pca_space: Optional[bool] = False,
+        store_all_unlabeled_csv: Optional[bool] = False,
         seed: int = 0,
     ) -> None:
         """Initialize a `TIFFDataModule`.
 
         :param tif_dir: The data directory. Defaults to `"data/"`.
-        :param train_val_test_split: The train, validation and test split. Defaults to `(55_000, 5_000, 10_000)`.
         :param batch_size: The batch size. Defaults to `64`.
         :param num_workers: The number of workers. Defaults to `0`.
         :param pin_memory: Whether to pin memory. Defaults to `False`.
+        :param window_size: The window size. Defaults to `5`.
+        :param multiplier: The multiplier for upsampling positives in the train_data split. Defaults to `20`.
+        :param downsample: Whether to downsample the negative (i.e., unlabeled) class. Defaults to `True`.
+        :param oversample: Whether to oversample the positive (i.e., known deposits) in train_data split. Defaults to `True`.
+        :param log_path: The path to the log directory. Defaults to `"logs/"`.
+        :param likely_neg_range: The range of values to consider as likely negatives. Defaults to `[0.25,0.75]`.
+        :param frac_train_split: The fraction of the data to use for training. Defaults to `0.5`.
+        :param specified_split: The coordinates to use for splitting the data. Defaults to `None`.
+        :param num_pca_components: The number of PCA components to use. Defaults to `None`.
+        :param in_pca_space: Whether to use PCA space to do downsampling. Defaults to `False`.
+        :param seed: The random seed. Defaults to `0`.
         """
         super().__init__()
 
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
-
-        # data transformations - we might use this later with custom tronsforms,
-        # default 3 band RGB image transform WILL NOT NECESSARILY WORK
-        # self.transforms = transforms.Compose(
-        #     [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-        # )
 
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
@@ -110,6 +117,7 @@ class TIFFDataModule(LightningDataModule):
                     tif_dir=self.hparams.tif_dir,
                     window_size=self.hparams.window_size,
                     stage=stage,
+                    num_pca_components=self.hparams.num_pca_components,
                 )
                 # downsample to likely negatives
                 if self.hparams.downsample:
@@ -119,12 +127,14 @@ class TIFFDataModule(LightningDataModule):
                         return X[:, window_size//2, window_size//2]
                     init_feat_extractor = partial(simple_feat_extractor, window_size=self.data_train.window_size)
                     self.data_train = dataset_utils.pu_downsample(
-                        self.data_train, 
-                        init_feat_extractor, 
-                        multiplier=self.hparams.multiplier, 
-                        likely_neg_range=self.hparams.likely_neg_range, 
+                        self.data_train,
+                        init_feat_extractor,
+                        multiplier=self.hparams.multiplier,
+                        likely_neg_range=self.hparams.likely_neg_range,
                         seed=self.hparams.seed,
-                        log_path=self.hparams.log_path
+                        log_path=self.hparams.log_path,
+                        in_pca_space=self.hparams.in_pca_space,
+                        store_all_unlabeled_csv=self.hparams.store_all_unlabeled_csv,
                     )
                 log.debug(f"Splitting base dataset into train / val / test.")
                 if self.hparams.specified_split:
@@ -149,6 +159,7 @@ class TIFFDataModule(LightningDataModule):
                     tif_dir=self.hparams.tif_dir,
                     window_size=self.hparams.window_size,
                     stage=stage,
+                    num_pca_components=self.hparams.num_pca_components
                 )
                 self.data_predict = dataset_utils.filter_by_bounds(self.data_predict)
                 log.info(f"Used bounds to filter patches - number of patches {len(self.data_predict)}.")
@@ -166,6 +177,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
+            persistent_workers=self.hparams.num_workers > 0,
         )
 
     def val_dataloader(self, shuffle: bool = False) -> DataLoader[Any]:
@@ -179,6 +191,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=shuffle,
+            persistent_workers=self.hparams.num_workers > 0,
         )
 
     def test_dataloader(self) -> DataLoader[Any]:
@@ -192,6 +205,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
+            persistent_workers=self.hparams.num_workers > 0,
         )
 
     def predict_dataloader(self) -> DataLoader[Any]:
