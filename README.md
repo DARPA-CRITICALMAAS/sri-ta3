@@ -167,3 +167,5 @@ INFO:     Uvicorn running on http://0.0.0.0:80 (Press CTRL+C to quit)
 You can now start mineral assessments by interacting with the [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) GUI at https://statmagic.mtri.org/
 
 Below is a video demonstrating how the SRI TA3 server processes a mineral assessment job initiated from the StatMagic GUI:
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/N4uB3mt2COM/0.jpg)](https://youtu.be/N4uB3mt2COM)

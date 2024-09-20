@@ -75,7 +75,7 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
             "experiment=pretrain_template.yaml",
             # "logger=csv", # wandb logger has issues in notebooks
             "logger.wandb.name=pretrain|",
-            "trainer=ddp",
+            "trainer=gpu",
             f"tags=['pretrain','mae', {str(model_event_obj.model_run_id)}, {str(model_event_obj.cma.mineral)}]",
             "task_name=pretrain-maevit",
             f"data.tif_dir={raster_stack_path.parent}",
@@ -95,7 +95,7 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
         overrides=[
             "experiment=classifier_template.yaml",
             "logger.wandb.name=train|",
-            "trainer=ddp",
+            "trainer=gpu",
             f"data.tif_dir={raster_stack_path.parent}",
             f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
             "paths.data_dir=data",
