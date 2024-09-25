@@ -29,6 +29,7 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
 
     print("Parsing CDR event payload.")
     model_event_obj = utils.parse_event_payload_result(model_event_json)
+    breakpoint()
 
     print("Generating AOI geopackage.")
     aoi_geopkg_path = utils.create_aoi_geopkg(model_event_obj)
@@ -71,19 +72,19 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
     print("Pretraining MAE.")
     pretrain_cfg = utils.build_hydra_config_notebook(
         overrides=[
-            # f"preprocess={raster_stack_yaml_path}",
             "experiment=pretrain_template.yaml",
+            # f"preprocess={raster_stack_yaml_path}",
             # "logger=csv", # wandb logger has issues in notebooks
-            "logger.wandb.name=pretrain|",
-            "trainer=gpu",
-            f"tags=['pretrain','mae', {str(model_event_obj.model_run_id)}, {str(model_event_obj.cma.mineral)}]",
-            "task_name=pretrain-maevit",
+            f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
+            f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+            f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
             f"data.tif_dir={raster_stack_path.parent}",
             f"model.net.input_dim={len(processed_evidence_layer_paths)}",
             "paths.data_dir=data",
             "paths.log_dir=logs",
-            "trainer.min_epochs=2",
-            "trainer.max_epochs=2",
+            "trainer=gpu",
+            "trainer.min_epochs=5",
+            "trainer.max_epochs=25",
         ]
     )
     utils.print_config_tree(pretrain_cfg)
@@ -94,17 +95,36 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
     train_cfg = utils.build_hydra_config_notebook(
         overrides=[
             "experiment=classifier_template.yaml",
-            "logger.wandb.name=train|",
-            "trainer=gpu",
-            f"data.tif_dir={raster_stack_path.parent}",
-            f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
+            f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
             "paths.data_dir=data",
             "paths.log_dir=logs",
+            f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+            f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+            # trainer args
+            "trainer=gpu",
+            "trainer.min_epochs=10",
+            "trainer.max_epochs=100",
+            # data args
+            # f"data.window_size=5",
+            f"data.tif_dir={raster_stack_path.parent}",
+            f"data.likely_neg_range={model_event_obj.train_config.likely_negative_range}",
+            f"data.frac_train_split={model_event_obj.train_config.fraction_train_split}",
+            f"data.multiplier={model_event_obj.train_config.upsample_multiplier}",
+            # model args
+            f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
             f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
-            f"tags=['train', 'mae', {str(model_event_obj.model_run_id)}, {str(model_event_obj.cma.mineral)}]",
-            "task_name=train-mae",
-            "trainer.min_epochs=5",
-            "trainer.max_epochs=5",
+            f"model.net.dropout_rate={model_event_obj.train_config.dropout}",
+            f"model.smoothing={model_event_obj.train_config.smoothing}",
+            f"model.optimizer.lr={model_event_obj.train_config.learning_rate}",
+            f"model.optimizer.weight_decay={model_event_obj.train_config.weight_decay}",
+            # f"model.net.backbone_net.patch_size=1",
+            # f"model.net.backbone_net.enc_dim=256",
+            # f"model.net.backbone_net.encoder_layer=6",
+            # f"model.net.backbone_net.encoder_head=8",
+            # f"model.net.backbone_net.dec_dim=128",
+            # f"model.net.backbone_net.decoder_layer=2",
+            # f"model.net.backbone_net.decoder_head=4",
+            # f"model.net.backbone_net.mask_ratio=0.0",
         ]
     )
     utils.print_config_tree(train_cfg)
