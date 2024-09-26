@@ -62,6 +62,18 @@ def parse_event_payload_result(resp_json: dict, model_type_filter="sri_NN"):
     return prospect_model_metadata
 
 
+def download_reference_layer(
+    event_obj: ProspectModelMetaData,
+    data_path: Path = Path("./data")
+) -> Path:
+    response = requests.get(event_obj.cma.download_url)
+    response.raise_for_status()
+    dst_path = data_path / Path(event_obj.model_run_id) / Path(event_obj.cma.download_url).name
+    with open(dst_path, 'wb') as f:
+        f.write(response.content)
+    return dst_path
+
+
 def download_layer(title: str, url: str, dst_dir: Path):
     local_file = f"{title}{Path(url).suffix}"
     response = requests.get(url)
@@ -101,7 +113,6 @@ def create_aoi_geopkg(
     event_obj: ProspectModelMetaData,
     data_path: Path = Path("./data")
 ):
-    # breakpoint()
     # sets geopackage location
     geopkg_path = data_path / Path(event_obj.model_run_id)
     geopkg_path.mkdir(parents=True, exist_ok=True)
@@ -130,7 +141,6 @@ def download_deposits(
     # top_n: int = 1,
     # limit: int = -1,
 ):
-    # breakpoint()
     # sets deposits location folder
     deposits_path = data_path / Path(event_obj.model_run_id) / Path("deposits")
     deposits_path.mkdir(parents=True, exist_ok=True)

@@ -8,58 +8,6 @@ raster_stacks:
         type: float32
         outlier_removal: false
         normalize: true
-      - path: "Geophysics/Seismic/Geophysics_LAB_HGM_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Seismic/Geophysics_LAB_HGM_Worms_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Seismic/Geophysics_Moho_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Magnetics/Geophysics_Mag_LOGAnalyticSignal_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_Worms_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Magnetics/Geophysics_Mag_RTP_Long-Wavelength_HGM_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/MT/Geophysics_MT2023_9km_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/MT/Geophysics_MT2023_15km_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/MT/Geophysics_MT2023_30km_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Gravity/Geophysics_Gravity_Isostatic_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Geophysics/Gravity/Geophysics_Gravity_Bouguer_Up30km_HGM_Worms_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
       - path: "Labels/magmatic_nickel_sites_v1h2merged_cont_US_clipped.tif"
         type: bool
         outlier_removal: false

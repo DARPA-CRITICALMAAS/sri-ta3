@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import os
 from os import makedirs
 from pathlib import Path
@@ -39,10 +39,11 @@ def format_nodata_crs(
         raster_data = src.read(1)
         nodata_value = src.nodata
         CRS = src.crs if src.crs is not None else default_crs
-        if nodata_value is not None:
-            raster_data = np.where(raster_data == nodata_value, default_nodata, raster_data)
-        else:
-            raise Exception(f"Raster no data value is None: {src_raster_path}")
+        # if nodata_value is not None:
+        #     raster_data = np.where(raster_data == nodata_value, default_nodata, raster_data)
+        # else:
+        #     raise Exception(f"Raster no data value is None: {src_raster_path}")
+        raster_data = np.where(raster_data == nodata_value, default_nodata, raster_data)
 
         metadata = src.meta
         metadata.update(dtype=rasterio.float32, nodata=default_nodata, crs=CRS)
@@ -157,7 +158,7 @@ def clip_raster(
     """
     # Read the shapefile
     shapes = gpd.read_file(aoi_path)
-    shapes['geometry'] = shapes['geometry'].simplify(tolerance=0.1)
+    # shapes['geometry'] = shapes['geometry'].simplify(tolerance=0.1)
 
     # Open the raster file
     with rasterio.open(src_raster_path) as src:
@@ -172,7 +173,6 @@ def clip_raster(
     # Save the clipped raster
     with rasterio.open(dst_raster_path, "w", **out_meta) as dest:
         dest.write(out_image)
-
 
 
 def remove_outliers_tukey_raster(
@@ -276,6 +276,7 @@ def vector_to_raster(
     burn_value: float = 1.0,
     fill_value: float = None,
     dst_nodata: float = np.nan,
+    aoi_path: Optional[Union[Path, None]] = None
 ):
     """
     Rasterize a vector file to a raster with specific resolution.
@@ -286,12 +287,16 @@ def vector_to_raster(
     - x_res (float): Desired x resolution of the output raster.
     - y_res (float): Desired y resolution of the output raster.
     - burn_value (int/float): Value to burn in the raster (default is 1).
+    - aoi_path (Path or None): Path to the shapefile defining the region of interest (default is None).
     """
     # Read the vector file
     gdf = gpd.read_file(src_vector_path)
 
+    if aoi_path:
+        aoi_gdf = gpd.read_file(aoi_path)
+
     # Get bounds and calculate transform
-    minx, miny, maxx, maxy = gdf.total_bounds
+    minx, miny, maxx, maxy = aoi_gdf.total_bounds if aoi_path else gdf.total_bounds
     width = int((maxx - minx) / dst_res_x)
     height = int((maxy - miny) / dst_res_y)
     transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, width, height)
@@ -561,6 +566,7 @@ def preprocess_vector(
     )
     return scaled_file
 
+
 def deposits_filtering(
     df: pd.DataFrame,
     deposit_type: str,
@@ -580,13 +586,15 @@ def deposits_filtering(
     df = df[df['type'].str.contains('Past Producer|Prospect|Producer|NotSpecified', na=False)]
     df = df[df['rank'].str.contains('A|B|C|U', na=False)]
     df = df.reset_index(drop=True)
-    # print(f'Original length: {original_len}, Filtered length: {len(df)}')
+    print(f'Original length: {original_len}, Filtered length: {len(df)}')
     return df
+
 
 def process_label_raster(
     event_obj: ProspectModelMetaData,
     deposits_csv_path: Path,
     aoi: Path,
+    reference_layer_path: Path,
     confidence_threshold: float = 0.5,
     dilation_size: int = 5,
 ):
@@ -603,37 +611,55 @@ def process_label_raster(
     warped_shp_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_warped.shp')
     rasterized_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_rasterized.tif')
     clipped_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_clipped.tif')
+    aligned_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_aligned.tif')
     dilated_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_processed.tif')
     label_raster_path = dilated_file
 
     df = pd.read_csv(deposits_csv_path)
     deposit_type = event_obj.cma.mineral
-    df = deposits_filtering(df, deposit_type, confidence_threshold)
+    df = deposits_filtering(
+        df,
+        deposit_type,
+        confidence_threshold
+    )
+    df.to_csv(deposits_csv_path.parent / f'{deposit_type}_filtered.csv', index=False)
 
     geom = gpd.GeoSeries.from_wkt(df['centroid_epsg_4326'], crs='EPSG:4326')
     gdf = gpd.GeoDataFrame(df, geometry=geom)
     gdf = gdf.to_crs(event_obj.cma.crs)
-    gdf.to_file(warped_shp_file)
+    # clipping labels to the aoi
+    aoi_gdf = gpd.read_file(aoi)
+    clipped_gdf = gpd.clip(gdf, aoi_gdf, keep_geom_type=True)
+    # saving labels to file
+    clipped_gdf.to_file(warped_shp_file)
 
     vector_to_raster(
         src_vector_path=warped_shp_file,
         dst_raster_path=rasterized_file,
-        dst_res_x = event_obj.cma.resolution[0],
-        dst_res_y = event_obj.cma.resolution[1],
-        fill_value = 0.0
+        dst_res_x=event_obj.cma.resolution[0],
+        dst_res_y=event_obj.cma.resolution[1],
+        fill_value=0.0,
+        aoi_path=aoi
     )
     clip_raster(
         src_raster_path=rasterized_file,
         dst_raster_path=clipped_file,
         aoi_path=aoi
     )
-    dilate_raster(
+    align_rasters(
         src_raster_path=clipped_file,
+        dst_raster_path=aligned_file,
+        reference_raster_path=reference_layer_path,
+        resampling=rasterio.warp.Resampling.nearest
+    )
+    dilate_raster(
+        src_raster_path=aligned_file, #clipped_file,
         dst_raster_path=dilated_file,
         dilation_size=dilation_size,
         label_raster=True
     )
     return label_raster_path
+
 
 def create_raster_stack_yaml(
     event_obj: ProspectModelMetaData,
@@ -693,10 +719,12 @@ def create_raster_stack_yaml(
         yaml.dump(variables, file, sort_keys=False)
     return yaml_output_path
 
+
 def load_rasters(
     evidence_layer_paths: List[str],
 ):
     return [load_raster(evidence_layer_path) for evidence_layer_path in evidence_layer_paths]
+
 
 def load_raster(
     evidence_layer_path,

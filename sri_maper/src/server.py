@@ -8,7 +8,7 @@ import hashlib
 import hmac
 from fastapi.security import APIKeyHeader
 import httpx
-import ngrok
+# import ngrok
 import uvicorn
 import uvicorn.logging
 from fastapi import (BackgroundTasks, Depends, FastAPI, HTTPException, Request, status)
@@ -29,10 +29,12 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
 
     print("Parsing CDR event payload.")
     model_event_obj = utils.parse_event_payload_result(model_event_json)
-    breakpoint()
 
     print("Generating AOI geopackage.")
     aoi_geopkg_path = utils.create_aoi_geopkg(model_event_obj)
+
+    print("Downloading reference layer (aka template_raster.tif).")
+    reference_layer_path = utils.download_reference_layer(model_event_obj)
 
     print("Downloading deposits.")
     deposits_path = utils.download_deposits(model_event_obj, app_settings=app_settings)
@@ -42,6 +44,7 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
         event_obj=model_event_obj,
         deposits_csv_path=deposits_path,
         aoi=aoi_geopkg_path,
+        reference_layer_path=reference_layer_path
     )
 
     print("Downloading evidence layers.")
@@ -52,7 +55,7 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
         event_obj=model_event_obj,
         layers=evidence_layer_paths,
         aoi=aoi_geopkg_path,
-        reference_layer_path=processed_label_raster_path,
+        reference_layer_path=reference_layer_path
     )
 
     print("Creating a raster stack.")
@@ -79,12 +82,13 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
             f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
             f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
             f"data.tif_dir={raster_stack_path.parent}",
+            "data.batch_size=128",
             f"model.net.input_dim={len(processed_evidence_layer_paths)}",
             "paths.data_dir=data",
             "paths.log_dir=logs",
             "trainer=gpu",
             "trainer.min_epochs=5",
-            "trainer.max_epochs=25",
+            "trainer.max_epochs=50",
         ]
     )
     utils.print_config_tree(pretrain_cfg)
@@ -107,16 +111,16 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
             # data args
             # f"data.window_size=5",
             f"data.tif_dir={raster_stack_path.parent}",
-            f"data.likely_neg_range={model_event_obj.train_config.likely_negative_range}",
-            f"data.frac_train_split={model_event_obj.train_config.fraction_train_split}",
-            f"data.multiplier={model_event_obj.train_config.upsample_multiplier}",
+            f"data.likely_neg_range={str(model_event_obj.train_config.negative_sampling_fraction)}", #{str(model_event_obj.train_config.likely_negative_range)}",
+            f"data.frac_train_split=0.8", #{model_event_obj.train_config.fraction_train_split}",
+            f"data.multiplier=20", #{model_event_obj.train_config.upsample_multiplier}",
             # model args
             f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
             f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
-            f"model.net.dropout_rate={model_event_obj.train_config.dropout}",
+            f"model.net.dropout_rate=[0.0,{model_event_obj.train_config.dropout},{model_event_obj.train_config.dropout}]", #{str(model_event_obj.train_config.dropout)}",
             f"model.smoothing={model_event_obj.train_config.smoothing}",
-            f"model.optimizer.lr={model_event_obj.train_config.learning_rate}",
-            f"model.optimizer.weight_decay={model_event_obj.train_config.weight_decay}",
+            f"model.optimizer.lr=1e-3", #{model_event_obj.train_config.learning_rate}",
+            f"model.optimizer.weight_decay=1e-2", #{model_event_obj.train_config.weight_decay}",
             # f"model.net.backbone_net.patch_size=1",
             # f"model.net.backbone_net.enc_dim=256",
             # f"model.net.backbone_net.encoder_layer=6",
@@ -127,6 +131,7 @@ def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
             # f"model.net.backbone_net.mask_ratio=0.0",
         ]
     )
+
     utils.print_config_tree(train_cfg)
     train_metrics, train_objs = train(train_cfg)
     train_cfg.ckpt_path = train_objs["trainer"].checkpoint_callback.best_model_path
@@ -182,8 +187,8 @@ atexit.register(clean_up)
 
 
 # Get ngrok to give us an endpoint
-listener = ngrok.forward(server_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
-server_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
+# listener = ngrok.forward(server_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
+# server_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
 
 
 app = FastAPI() # creating an instance

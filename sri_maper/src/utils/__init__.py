@@ -18,6 +18,7 @@ from sri_maper.src.utils.posthoc_utils import BinaryTemperatureScaling, Threshol
 from sri_maper.src.utils.cdr_utils import (
     get_event_payload_result,
     parse_event_payload_result,
+    download_reference_layer,
     download_evidence_layers,
     create_aoi_geopkg,
     download_deposits,
