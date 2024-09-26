@@ -2,21 +2,22 @@ import argparse
 import asyncio
 import os
 import shutil
-from pathlib import Path
-import requests
-import zipfile
-import geopandas as gpd
-from tqdm import tqdm
-import httpx
-import rasterio as rio
-from rasterio.mask import mask
 import fiona
 import glob
+import requests
+import zipfile
+import httpx
+
+from pathlib import Path
+import geopandas as gpd
+from tqdm import tqdm
+from typing import List
+import rasterio as rio
+from rasterio.mask import mask
+from pydantic import BaseModel, Field
 
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
 from cdr_schemas.prospectivity_input import (ProspectivityOutputLayer, SaveProcessedDataLayer)
-
-from pydantic import BaseModel, Field
 
 
 class CDR_Settings(BaseModel):
@@ -32,15 +33,42 @@ class CDR_Settings(BaseModel):
     callback_url: str
 
 
-def get_event_payload_result(id: str, app_settings: CDR_Settings):
+def get_event_payload_result(
+    id: str,
+    app_settings: CDR_Settings
+):
+    """
+    Getting the event payload result from CDR
+
+    Parameters:
+    id (str): The model run id
+    app_settings (CDR_Settings): The CDR settings object
+
+    Returns:
+    dict: The event payload result
+    """
     headers = {'Authorization': f'Bearer {app_settings.user_api_token}'}
     client = httpx.Client(follow_redirects=True, timeout=None)
-    resp = client.get(f"{app_settings.cdr_host}/v1/prospectivity/model_run?model_run_id={id}",
-                      headers=headers)
+    resp = client.get(
+        f"{app_settings.cdr_host}/v1/prospectivity/model_run?model_run_id={id}", headers=headers
+    )
     return resp.json()
 
 
-def parse_event_payload_result(resp_json: dict, model_type_filter="sri_NN"):
+def parse_event_payload_result(
+    resp_json: dict,
+    model_type_filter="sri_NN"
+) -> ProspectModelMetaData:
+    """
+    Parsing the event payload result from CDR
+
+    Parameters:
+    resp_json (dict): The event payload result
+    model_type_filter (str): The model type filter
+
+    Returns:
+    ProspectModelMetaData: The prospect model metadata object
+    """
     if resp_json.get("model_type") != model_type_filter:
         raise Exception(f"The model_type '{resp_json.get('model_type')}' is not supported.")
 
@@ -66,6 +94,16 @@ def download_reference_layer(
     event_obj: ProspectModelMetaData,
     data_path: Path = Path("./data")
 ) -> Path:
+    """
+    Downloading the reference (template) layer from CDR
+
+    Parameters:
+    event_obj (ProspectModelMetaData): The prospect model metadata object
+    data_path (Path): The data path
+
+    Returns:
+    Path: The reference layer path
+    """
     response = requests.get(event_obj.cma.download_url)
     response.raise_for_status()
     dst_path = data_path / Path(event_obj.model_run_id) / Path(event_obj.cma.download_url).name
@@ -74,7 +112,22 @@ def download_reference_layer(
     return dst_path
 
 
-def download_layer(title: str, url: str, dst_dir: Path):
+def download_layer(
+    title: str,
+    url: str,
+    dst_dir: Path
+) -> Path:
+    """
+    Downloading the evidence layer from CDR
+
+    Parameters:
+    title (str): The title of the evidence layer
+    url (str): The url of the evidence layer
+    dst_dir (Path): The destination directory
+
+    Returns:
+    Path: The evidence layer path
+    """
     local_file = f"{title}{Path(url).suffix}"
     response = requests.get(url)
     response.raise_for_status()
@@ -87,7 +140,17 @@ def download_layer(title: str, url: str, dst_dir: Path):
 def download_evidence_layers(
     event_obj: ProspectModelMetaData,
     data_path: Path = Path("./data")
-):
+) -> List:
+    """
+    Downloading the evidence layers from CDR
+
+    Parameters:
+    event_obj (ProspectModelMetaData): The prospect model metadata object
+    data_path (Path): The data path
+
+    Returns:
+    list: The evidence layers paths
+    """
     # sets evidence layers location
     ev_lyrs_path = data_path / Path(event_obj.model_run_id) / Path("evidence_layers")
     ev_lyrs_path.mkdir(parents=True, exist_ok=True)
@@ -112,7 +175,17 @@ def download_evidence_layers(
 def create_aoi_geopkg(
     event_obj: ProspectModelMetaData,
     data_path: Path = Path("./data")
-):
+) -> Path:
+    """
+    Creating the area-of-interest (aoi) geopackage (or shapefile) from the CMA extent
+
+    Parameters:
+    event_obj (ProspectModelMetaData): The prospect model metadata object
+    data_path (Path): The data path
+
+    Returns:
+    Path: The aoi geopackage (or shapefile) path
+    """
     # sets geopackage location
     geopkg_path = data_path / Path(event_obj.model_run_id)
     geopkg_path.mkdir(parents=True, exist_ok=True)
@@ -140,7 +213,18 @@ def download_deposits(
     # with_deposit_types_only: bool = True,
     # top_n: int = 1,
     # limit: int = -1,
-):
+) -> Path:
+    """
+    Download deposits from CDR
+
+    Parameters:
+    event_obj (ProspectModelMetaData): The prospect model metadata object
+    app_settings (CDR_Settings): The CDR settings object
+    data_path (Path): The data path
+
+    Returns:
+    Path: The deposits path
+    """
     # sets deposits location folder
     deposits_path = data_path / Path(event_obj.model_run_id) / Path("deposits")
     deposits_path.mkdir(parents=True, exist_ok=True)
@@ -175,7 +259,19 @@ def send_output(
     output_path: Path,
     payload,
     app_settings
-):
+) -> None:
+    """
+    Sending the output (Likehoods and Uncertainties) rasters to CDR
+
+    Parameters:
+    output_type (str): The output type
+    output_path (Path): The output path
+    payload: The event payload result
+    app_settings (CDR_Settings): The CDR settings object
+
+    Returns:
+    None
+    """
     print(f"Sending {output_path} to CDR...")
 
     # checks outputs file exists
@@ -223,7 +319,19 @@ def send_processed_evidence_layer(
     layer: str,
     payload,
     app_settings
-):
+) -> None:
+    """
+    Sending the processed evidence layers (preprocessed rasters) to CDR
+
+    Parameters:
+    layer_path (Path): The layer path
+    layer (str): The layer name
+    payload: The event payload result
+    app_settings (CDR_Settings): The CDR settings object
+
+    Returns:
+    None
+    """
     print(f"Sending {layer_path.stem} to CDR...")
 
     # checks outputs file exists

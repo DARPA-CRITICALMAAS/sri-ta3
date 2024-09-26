@@ -6,11 +6,12 @@ from tqdm import tqdm
 import atexit
 import hashlib
 import hmac
-from fastapi.security import APIKeyHeader
 import httpx
-# import ngrok
+import ngrok
 import uvicorn
 import uvicorn.logging
+
+from fastapi.security import APIKeyHeader
 from fastapi import (BackgroundTasks, Depends, FastAPI, HTTPException, Request, status)
 from cdr_schemas.events import Event
 
@@ -23,7 +24,10 @@ from sri_maper.src.train import train
 from sri_maper.src.map import build_map
 
 
-def run_ta3_pipeline(event_id: int, app_settings: utils.CDR_Settings):
+def run_ta3_pipeline(
+    event_id: int,
+    app_settings: utils.CDR_Settings
+):
     print("Querying CDR for event.")
     model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
 
@@ -187,8 +191,8 @@ atexit.register(clean_up)
 
 
 # Get ngrok to give us an endpoint
-# listener = ngrok.forward(server_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
-# server_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
+listener = ngrok.forward(server_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
+server_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
 
 
 app = FastAPI() # creating an instance
