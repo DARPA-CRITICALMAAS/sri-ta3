@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from tqdm import tqdm
 
@@ -31,6 +32,14 @@ def run_ta3_pipeline(
     print("Querying CDR for event.")
     model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
 
+    # temporary fix for transform_methods being a string instead of a dict
+    import ast
+    for idx, l in enumerate(model_event_json['event']['payload']['evidence_layers']):
+        if model_event_json['event']['payload']['evidence_layers'][idx]['transform_methods']:
+            model_event_json['event']['payload']['evidence_layers'][idx]['transform_methods'][1] = ast.literal_eval(model_event_json['event']['payload']['evidence_layers'][idx]['transform_methods'][1])
+        else:
+            print("transform_methods is empty")
+
     print("Parsing CDR event payload.")
     model_event_obj = utils.parse_event_payload_result(model_event_json)
 
@@ -61,7 +70,7 @@ def run_ta3_pipeline(
         aoi=aoi_geopkg_path,
         reference_layer_path=reference_layer_path
     )
-
+    breakpoint()
     print("Creating a raster stack.")
     raster_stack_path = preprocessing.generate_raster_stack(
         evidence_layer_paths=processed_evidence_layer_paths,

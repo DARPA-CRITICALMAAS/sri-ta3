@@ -416,15 +416,62 @@ def preprocess_evidence_layers(
     layers: List[Path],
     aoi: Path,
     reference_layer_path: Path,
-):
+) -> List[Path]:
+    """
+    Preprocessing evidence layers
+
+    Parameters:
+    event_obj (ProspectModelMetaData): The prospect model metadata object
+    layers (List[Path]): List with Paths of raw/not processed layers
+    aoi (Path): Path to the region of interest
+    reference_layer_path (Path):
+
+    Returns:
+    List[Path]: List with Paths of fully preprocessed layers
+    """
     pev_lyr_paths = []
-    for layer in tqdm(layers):
+    for idx, layer in tqdm(enumerate(layers)):
         if layer.suffix == ".tif":
-            pev_lyr_path = preprocess_raster(event_obj, layer, aoi, reference_layer_path)
+            pev_lyr_path = preprocess_raster(event_obj, layer, aoi, reference_layer_path, idx)
         elif layer.suffix == ".zip":
-            pev_lyr_path = preprocess_vector(event_obj, layer, aoi, reference_layer_path)
+            pev_lyr_path = preprocess_vector(event_obj, layer, aoi, reference_layer_path, idx)
         pev_lyr_paths.append(pev_lyr_path)
     return pev_lyr_paths
+
+
+def transform_raster(
+    src_raster_path,
+    dst_raster_path,
+    method: str = "log"
+) -> None:
+    """
+    Apply a transformation function to a raster image.
+
+    Parameters:
+    - src_raster_path (str): Path to the input raster file.
+    - dst_raster_path (str): Path to save the output raster file.
+    - method (str): The transformation function to apply.
+    """
+    with rasterio.open(src_raster_path) as src:
+        metadata = src.meta
+        metadata.update(dtype=rasterio.float32)
+
+        raster_data = src.read(1)
+        raster_data = np.where(raster_data == metadata['nodata'], np.nan, raster_data)
+
+        if method == "log":
+            transformed_data = np.log(np.where(raster_data > 0, raster_data, np.nan))
+        elif method == "abs":
+            transformed_data = np.abs(raster_data)
+        elif method == "sqrt":
+            transformed_data = np.sqrt(np.where(raster_data >= 0, raster_data, np.nan))
+        else:
+            raise Exception(f"Unknown transform function {method}.")
+
+        transformed_data = np.where(np.isnan(transformed_data), metadata['nodata'], transformed_data)
+
+    with rasterio.open(dst_raster_path, 'w', **metadata) as dst:
+        dst.write(transformed_data.astype(rasterio.float32), 1)
 
 
 def preprocess_raster(
@@ -432,9 +479,13 @@ def preprocess_raster(
     layer: Path,
     aoi: Path,
     reference_layer_path: Path,
+    layer_idx: int,
     imputation_size: int = 100,
     window_size: int = 5,
 ):
+    # get UI specified preprocessing methods
+    transform_methods = event_obj.evidence_layers[layer_idx].transform_methods
+
     formatted_file = layer.parent / (layer.stem +"_formatted" + layer.suffix)
     warped_file = layer.parent / (layer.stem +"_warped" + layer.suffix)
     imputed_file = layer.parent / (layer.stem +"_imputed" + layer.suffix)
@@ -443,6 +494,7 @@ def preprocess_raster(
     dilated_file = layer.parent / (layer.stem +"_dilated" + layer.suffix)
     olr_file = layer.parent / (layer.stem +"_olr" + layer.suffix)
     scaled_file = layer.parent / (layer.stem +"_processed" + layer.suffix)
+
     format_nodata_crs(
         src_raster_path=layer,
         dst_raster_path=formatted_file,
@@ -483,6 +535,24 @@ def preprocess_raster(
         dst_raster_path=scaled_file,
         scaling_type="standard"
     )
+
+    # # Define the order of function calls
+    # function_calls = [
+    #     (format_nodata_crs, {"src_raster_path": layer, "dst_raster_path": formatted_file}),
+    #     (warp_raster, {"src_raster_path": formatted_file, "dst_raster_path": warped_file, "dst_crs": event_obj.cma.crs, "dst_res_x": event_obj.cma.resolution[0], "dst_res_y": event_obj.cma.resolution[1]}),
+
+    #     (dilate_raster, {"src_raster_path": warped_file, "dst_raster_path": imputed_file, "dilation_size": imputation_size}),
+    #     (clip_raster, {"src_raster_path": imputed_file, "dst_raster_path": clipped_file, "aoi_path": str(aoi)}),
+    #     (align_rasters, {"src_raster_path": clipped_file, "dst_raster_path": aligned_file, "reference_raster_path": reference_layer_path}),
+    #     (dilate_raster, {"src_raster_path": aligned_file, "dst_raster_path": dilated_file, "dilation_size": window_size}),
+    #     (remove_outliers_tukey_raster, {"src_raster_path": dilated_file, "dst_raster_path": olr_file}),
+    #     (scale_raster, {"src_raster_path": olr_file, "dst_raster_path": scaled_file, "scaling_type": "standard"}),
+    # ]
+
+    # # Call each function in order
+    # for function, kwargs in function_calls:
+    #     function(**kwargs)
+
     return scaled_file
 
 
@@ -509,8 +579,12 @@ def preprocess_vector(
     layer: Path,
     aoi: Path,
     reference_layer_path: Path,
+    layer_idx: int,
     window_size: int = 5,
 ):
+    # get UI specified preprocessing methods
+    transform_methods = event_obj.evidence_layers[layer_idx].transform_methods
+
     # gets vector file path
     shp_file = find_shapefiles(layer.parent / layer.stem)
     if len(shp_file) > 1 or len(shp_file) == 0: raise Exception(f"Cannot process vector file {layer}.")
