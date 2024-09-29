@@ -15,6 +15,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import matplotlib.pyplot as plt
 from scipy.ndimage import distance_transform_edt
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
+from cdr_schemas.prospectivity_input import ScalingType, TransformMethod, Impute, ImputeMethod
 import yaml
 import rasterio
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -485,15 +486,35 @@ def preprocess_raster(
 ):
     # get UI specified preprocessing methods
     transform_methods = event_obj.evidence_layers[layer_idx].transform_methods
+    transform_methods_dict = {
+        'transform': None,
+        'impute_method': None,
+        'impute_window_size': None,
+        'scaling': 'standard'
+    }
+    for method in transform_methods:
+        if isinstance(method, TransformMethod):
+            transform_methods_dict['transform'] = method.value
+        elif isinstance(method, Impute):
+            transform_methods_dict['impute_method'] = method.impute_method.value
+            transform_methods_dict['impute_window_size'] = method.window_size
+        elif isinstance(method, ScalingType):
+            transform_methods_dict['scaling'] = method.value
+        else:
+            raise ValueError("Unknown method")
 
-    formatted_file = layer.parent / (layer.stem +"_formatted" + layer.suffix)
-    warped_file = layer.parent / (layer.stem +"_warped" + layer.suffix)
-    imputed_file = layer.parent / (layer.stem +"_imputed" + layer.suffix)
-    clipped_file = layer.parent / (layer.stem +"_clipped" + layer.suffix)
-    aligned_file = layer.parent / (layer.stem +"_aligned" + layer.suffix)
-    dilated_file = layer.parent / (layer.stem +"_dilated" + layer.suffix)
-    olr_file = layer.parent / (layer.stem +"_olr" + layer.suffix)
-    scaled_file = layer.parent / (layer.stem +"_processed" + layer.suffix)
+    formatted_file = layer.parent / (layer.stem + "_formatted" + layer.suffix)
+    warped_file = layer.parent / (layer.stem + "_warped" + layer.suffix)
+    imputed_file = layer.parent / (layer.stem + "_imputed" + layer.suffix)
+    clipped_file = layer.parent / (layer.stem + "_clipped" + layer.suffix)
+    aligned_file = layer.parent / (layer.stem + "_aligned" + layer.suffix)
+    dilated_file = layer.parent / (layer.stem + "_dilated" + layer.suffix)
+    olr_file = layer.parent / (layer.stem + "_olr" + layer.suffix)
+    if transform_methods_dict['transform']:
+        scaled_file = layer.parent / (layer.stem + "_scaled" + layer.suffix)
+        transform_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
+    else:
+        scaled_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
 
     format_nodata_crs(
         src_raster_path=layer,
@@ -533,27 +554,17 @@ def preprocess_raster(
     scale_raster(
         src_raster_path=olr_file,
         dst_raster_path=scaled_file,
-        scaling_type="standard"
+        scaling_type=transform_methods_dict['scaling']
     )
-
-    # # Define the order of function calls
-    # function_calls = [
-    #     (format_nodata_crs, {"src_raster_path": layer, "dst_raster_path": formatted_file}),
-    #     (warp_raster, {"src_raster_path": formatted_file, "dst_raster_path": warped_file, "dst_crs": event_obj.cma.crs, "dst_res_x": event_obj.cma.resolution[0], "dst_res_y": event_obj.cma.resolution[1]}),
-
-    #     (dilate_raster, {"src_raster_path": warped_file, "dst_raster_path": imputed_file, "dilation_size": imputation_size}),
-    #     (clip_raster, {"src_raster_path": imputed_file, "dst_raster_path": clipped_file, "aoi_path": str(aoi)}),
-    #     (align_rasters, {"src_raster_path": clipped_file, "dst_raster_path": aligned_file, "reference_raster_path": reference_layer_path}),
-    #     (dilate_raster, {"src_raster_path": aligned_file, "dst_raster_path": dilated_file, "dilation_size": window_size}),
-    #     (remove_outliers_tukey_raster, {"src_raster_path": dilated_file, "dst_raster_path": olr_file}),
-    #     (scale_raster, {"src_raster_path": olr_file, "dst_raster_path": scaled_file, "scaling_type": "standard"}),
-    # ]
-
-    # # Call each function in order
-    # for function, kwargs in function_calls:
-    #     function(**kwargs)
-
-    return scaled_file
+    if transform_methods_dict['transform']:
+        transform_raster(
+            src_raster_path=scaled_file,
+            dst_raster_path=transform_file,
+            method=transform_methods_dict['transform']
+        )
+        return transform_file
+    else:
+        return scaled_file
 
 
 def find_shapefiles(directory):
@@ -584,6 +595,22 @@ def preprocess_vector(
 ):
     # get UI specified preprocessing methods
     transform_methods = event_obj.evidence_layers[layer_idx].transform_methods
+    transform_methods_dict = {
+        'transform': None,
+        'impute_method': None,
+        'impute_window_size': None,
+        'scaling': 'standard'
+    }
+    for method in transform_methods:
+        if isinstance(method, TransformMethod):
+            transform_methods_dict['transform'] = method.value
+        elif isinstance(method, Impute):
+            transform_methods_dict['impute_method'] = method.impute_method.value
+            transform_methods_dict['impute_window_size'] = method.window_size
+        elif isinstance(method, ScalingType):
+            transform_methods_dict['scaling'] = method.value
+        else:
+            raise ValueError("Unknown method")
 
     # gets vector file path
     shp_file = find_shapefiles(layer.parent / layer.stem)
@@ -597,7 +624,12 @@ def preprocess_vector(
     aligned_file = rasterized_file.parent / (rasterized_file.stem +"_aligned" + rasterized_file.suffix)
     dilated_file = rasterized_file.parent / (rasterized_file.stem +"_dilated" + rasterized_file.suffix)
     olr_file = rasterized_file.parent / (rasterized_file.stem +"_olr" + rasterized_file.suffix)
-    scaled_file = rasterized_file.parent / (rasterized_file.stem +"_processed" + rasterized_file.suffix)
+    if transform_methods_dict['transform']:
+        scaled_file = layer.parent / (layer.stem + "_scaled" + layer.suffix)
+        transform_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
+    else:
+        scaled_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
+
     warp_vector(
         src_vector_path = shp_file,
         dst_vector_path = warped_shp_file,
@@ -636,9 +668,17 @@ def preprocess_vector(
     scale_raster(
         src_raster_path=olr_file,
         dst_raster_path=scaled_file,
-        scaling_type="standard"
+        scaling_type=transform_methods_dict['scaling']
     )
-    return scaled_file
+    if transform_methods_dict['transform']:
+        transform_raster(
+            src_raster_path=scaled_file,
+            dst_raster_path=transform_file,
+            method=transform_methods_dict['transform']
+        )
+        return transform_file
+    else:
+        return scaled_file
 
 
 def deposits_filtering(
@@ -745,18 +785,15 @@ def create_raster_stack_yaml(
     """
     Creates .yaml file with information about rasters that go into raster stack
 
-    Args:
-        event_obj (ProspectModelMetaData):
-        evidence_layer_paths (List[Path]): Paths to evidence layers
-        label_raster_path (Path): Path to label raster
-        data_path (Path, optional): Path where to output .yaml file. Defaults to Path("./data").
+    Parameters:
+    event_obj (ProspectModelMetaData):
+    evidence_layer_paths (List[Path]): Paths to evidence layers
+    label_raster_path (Path): Path to label raster
+    data_path (Path, optional): Path where to output .yaml file. Defaults to Path("./data").
 
     Returns:
-        _type_: _description_
+    Path: .yaml file path.
     """
-    # description = event_obj.cma.description
-    # model_run_id = event_obj.model_run_id
-
     yaml_output_path = data_path / Path(event_obj.model_run_id)
     yaml_output_path.mkdir(parents=True, exist_ok=True)
 
@@ -765,31 +802,22 @@ def create_raster_stack_yaml(
     for filename in evidence_layer_paths:
         filename = str(filename)
         if filename.endswith('.tif'):
-            raster_files.append({
-                'path' : filename,
-                # 'type' : 'float32',
-                # 'outlier_removal' : True,
-                # 'normalize' : True
-            })
+            raster_files.append(filename)
     # label raster
     label_raster = str(label_raster_path)
-    if label_raster.endswith('.tif'):
-        raster_files.append({
-            'path' : label_raster,
-            # 'type' : 'float32',
-        })
-
     variables = {
         '_target_' : 'sri_maper.src.data.preprocessing.generate_raster_stacks',
         'raster_stacks' : [
             {
                 'raster_stack_path' : str(raster_stack_path),
-                'raster_files_path' : raster_files
+                'window_size' : 5,
+                'evidence_layer_paths' : raster_files,
+                'label_raster_path' : [label_raster],
             }
         ]
     }
-
-    with open(Path(os.path.join(yaml_output_path, 'preprocessing.yaml')), 'w') as file:
+    yaml_output_path = yaml_output_path / 'preprocessing.yaml'
+    with open(yaml_output_path, 'w') as file:
         yaml.dump(variables, file, sort_keys=False)
     return yaml_output_path
 
@@ -817,8 +845,9 @@ def generate_raster_stacks(raster_stacks):
     # for raster_stack in tqdm(raster_stacks):
     #     if not Path(raster_stack.raster_stack_path).is_file():
     #         generate_raster_stack(
-    #             raster_stack.raster_stack_path,
-    #             raster_stack.raster_files_path
+    #             raster_stack.evidence_layer_paths,
+    #             raster_stack.label_raster_path,
+    #             raster_stack.window_size
     #         )
 
 

@@ -1,14 +1,8 @@
 _target_: sri_maper.src.data.preprocessing.generate_raster_stacks
 raster_stacks:
-  - raster_stack_path: ${data.tif_dir}/maniac-natl_d${data.window_size}.tif
-    raster_files_path: ${paths.data_dir}/raster_libraries/national_scale_raster_library
-    dilation_size: ${data.window_size}
-    raster_files:
-      - path: "Geophysics/Seismic/Geophysics_LAB_clipped.tif"
-        type: float32
-        outlier_removal: false
-        normalize: true
-      - path: "Labels/magmatic_nickel_sites_v1h2merged_cont_US_clipped.tif"
-        type: bool
-        outlier_removal: false
-        normalize: false
+  - raster_stack_path: null
+    window_size: ${data.window_size}
+    evidence_layer_paths:
+      - null
+    label_raster_path:
+      - null

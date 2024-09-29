@@ -32,14 +32,6 @@ def run_ta3_pipeline(
     print("Querying CDR for event.")
     model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
 
-    # temporary fix for transform_methods being a string instead of a dict
-    import ast
-    for idx, l in enumerate(model_event_json['event']['payload']['evidence_layers']):
-        if model_event_json['event']['payload']['evidence_layers'][idx]['transform_methods']:
-            model_event_json['event']['payload']['evidence_layers'][idx]['transform_methods'][1] = ast.literal_eval(model_event_json['event']['payload']['evidence_layers'][idx]['transform_methods'][1])
-        else:
-            print("transform_methods is empty")
-
     print("Parsing CDR event payload.")
     model_event_obj = utils.parse_event_payload_result(model_event_json)
 
@@ -70,7 +62,7 @@ def run_ta3_pipeline(
         aoi=aoi_geopkg_path,
         reference_layer_path=reference_layer_path
     )
-    breakpoint()
+
     print("Creating a raster stack.")
     raster_stack_path = preprocessing.generate_raster_stack(
         evidence_layer_paths=processed_evidence_layer_paths,
@@ -89,7 +81,9 @@ def run_ta3_pipeline(
     pretrain_cfg = utils.build_hydra_config_notebook(
         overrides=[
             "experiment=pretrain_template.yaml",
-            # f"preprocess={raster_stack_yaml_path}",
+            f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+            f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+            f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
             # "logger=csv", # wandb logger has issues in notebooks
             f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
             f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
@@ -104,9 +98,10 @@ def run_ta3_pipeline(
             "trainer.max_epochs=50",
         ]
     )
+
     utils.print_config_tree(pretrain_cfg)
     pretrain_metrics, pretrain_objs = pretrain(pretrain_cfg)
-
+    breakpoint()
     print("Training classifier using pretrained MAE.")
     backbone_ckpt_embeddings = pretrain_objs['trainer'].checkpoint_callback.dirpath+f"/embeddings_d{pretrain_cfg.model.net.enc_dim}.npy"
     train_cfg = utils.build_hydra_config_notebook(
@@ -124,7 +119,7 @@ def run_ta3_pipeline(
             # data args
             # f"data.window_size=5",
             f"data.tif_dir={raster_stack_path.parent}",
-            f"data.likely_neg_range={str(model_event_obj.train_config.negative_sampling_fraction)}", #{str(model_event_obj.train_config.likely_negative_range)}",
+            f"data.likely_neg_range={list(model_event_obj.train_config.negative_sampling_fraction)}", #{str(model_event_obj.train_config.likely_negative_range)}",
             f"data.frac_train_split=0.8", #{model_event_obj.train_config.fraction_train_split}",
             f"data.multiplier=20", #{model_event_obj.train_config.upsample_multiplier}",
             # model args

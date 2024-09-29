@@ -8,6 +8,7 @@ import requests
 import zipfile
 import httpx
 import json
+import ast
 
 from pathlib import Path
 import geopandas as gpd
@@ -56,6 +57,13 @@ def get_event_payload_result(
     )
     resp = resp.json()
 
+    # temporary fix for Impute transform method being a string instead of a dict | WILL BE DELETED IN THE FUTURE!!!
+    for idx_l, _ in enumerate(resp['event']['payload']['evidence_layers']):
+        if resp['event']['payload']['evidence_layers'][idx_l]['transform_methods']:
+            for idx_m, method in enumerate(resp['event']['payload']['evidence_layers'][idx_l]['transform_methods']):
+                if "impute_method" in method and "window_size" in method:
+                    resp['event']['payload']['evidence_layers'][idx_l]['transform_methods'][idx_m] = ast.literal_eval(resp['event']['payload']['evidence_layers'][idx_l]['transform_methods'][idx_m])
+
     print("Saving JSON file")
     json_path = data_path / Path(id)
     json_path.mkdir(parents=True, exist_ok=True)
@@ -95,11 +103,6 @@ def parse_event_payload_result(
         train_config = model_payload.get("train_config"),
         evidence_layers = model_payload.get("evidence_layers"),
     )
-    # prospect_model_metadata = ProspectModelMetaData(model_run_id = model_payload.get("model_run_id"),cma = model_payload.get("cma"),model_type = model_payload.get("model_type"),train_config = model_payload.get("train_config"),evidence_layers = model_payload.get("evidence_layers"))
-
-    # [{'transform_methods': ['log', '{"impute_method": "median", "window_size": [5, 5]}'], 'title': 'LandsatRasterPrediction', 'data_source': {'evidence_layer_raster_prefix': 'LandsatRasterPrediction', 'format': 'tif', 'description': 'LandsatRasterPrediction', 'reference_url': '', 'type': 'continuous', 'resolution': [36.0, 36.0], 'derivative_ops': '', 'download_url': 'https://s3.amazonaws.com/public.cdr.land/prospectivity/inputs/aa2cafd8b6eb4e74b31af19358c6316d.tif', 'publication_date': '2024-08-22T00:00:00', 'category': 'geophysics', 'subcategory': 'User upload', 'data_source_id': 'LandsatRasterPrediction_res0_36_res1_36_cat_LayerCategoryGEOPHYSICS', 'DOI': '', 'authors': ['']}}]
-    # [{'transform_methods': ['log', {"impute_method": "median", "window_size": [5, 5]}], 'title': 'LandsatRasterPrediction', 'data_source': {'evidence_layer_raster_prefix': 'LandsatRasterPrediction', 'format': 'tif', 'description': 'LandsatRasterPrediction', 'reference_url': '', 'type': 'continuous', 'resolution': [36.0, 36.0], 'derivative_ops': '', 'download_url': 'https://s3.amazonaws.com/public.cdr.land/prospectivity/inputs/aa2cafd8b6eb4e74b31af19358c6316d.tif', 'publication_date': '2024-08-22T00:00:00', 'category': 'geophysics', 'subcategory': 'User upload', 'data_source_id': 'LandsatRasterPrediction_res0_36_res1_36_cat_LayerCategoryGEOPHYSICS', 'DOI': '', 'authors': ['']}}]
-
     return prospect_model_metadata
 
 
