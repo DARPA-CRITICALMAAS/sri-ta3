@@ -8,7 +8,7 @@ defaults:
 
 # choose metric which will be optimized by Optuna
 # make sure this is the correct name of some metric logged in lightning module!
-optimized_metric: "val/auc_best"
+optimized_metric: "val/auprc_best"
 
 # here we define Optuna hyperparameter search
 # it optimizes for value returned from function with @hydra.main decorator
@@ -24,7 +24,7 @@ hydra:
     storage: null
 
     # name of the study to persist optimization results
-    study_name: mvt_resnet_geophysics
+    study_name: classifier_optimization
 
     # number of parallel workers
     n_jobs: 1
@@ -47,4 +47,3 @@ hydra:
     params:
       model.optimizer.lr: interval(1e-4, 1e-3)
       model.optimizer.weight_decay: choice(0.0, 1e-4, 1e-3, 1e-2)
-      model.net.dropout_rate: choice(0.2, 0.4, 0.6, 0.8)

@@ -101,12 +101,15 @@ def run_ta3_pipeline(
 
     utils.print_config_tree(pretrain_cfg)
     pretrain_metrics, pretrain_objs = pretrain(pretrain_cfg)
-    breakpoint()
+
     print("Training classifier using pretrained MAE.")
     backbone_ckpt_embeddings = pretrain_objs['trainer'].checkpoint_callback.dirpath+f"/embeddings_d{pretrain_cfg.model.net.enc_dim}.npy"
     train_cfg = utils.build_hydra_config_notebook(
         overrides=[
             "experiment=classifier_template.yaml",
+            f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+            f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+            f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
             f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
             "paths.data_dir=data",
             "paths.log_dir=logs",

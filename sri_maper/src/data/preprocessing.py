@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Literal
 import os
 from os import makedirs
 from pathlib import Path
@@ -11,7 +11,7 @@ import rasterio
 import subprocess
 import fiona
 from sri_maper.src import utils
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler
 import matplotlib.pyplot as plt
 from scipy.ndimage import distance_transform_edt
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
@@ -215,14 +215,19 @@ def remove_outliers_tukey_raster(
 def scale_raster(
     src_raster_path: str,
     dst_raster_path: str,
-    scaling_type: str,
+    scaling_type: Literal["standard", "minmax", "maxabs"] = "standard",
+    min_value: float = 0.0,
+    max_value: float = 1.0
 ):
     """
-    Standard scale a raster image using scikit-learn's StandardScaler.
+    Standard/MinMax/MaxAbs scale a raster image using scikit-learn's StandardScaler.
 
     Parameters:
     - src_raster_path (str): Path to the input raster file.
     - dst_raster_path (str): Path to save the output scaled raster file.
+    - scaling_type (str): The type of scaling to apply. Options are 'standard', 'minmax', and 'maxabs' (default is 'standard').
+    - min_value (float): Minimum value for scaling, only used if scaling_type is 'minmax' (default is 0.0).
+    - max_value (float): Maximum value for scaling, only used if scaling_type is 'minmax' (default is 1.0).
     """
     with rasterio.open(src_raster_path) as src:
         raster_data = src.read(1)
@@ -231,7 +236,12 @@ def scale_raster(
         if scaling_type == "standard":
             scaler = StandardScaler()
         elif scaling_type == "minmax":
-            scaler = MinMaxScaler()
+            assert min_value < max_value, "min_value must be less than max_value."
+            scaler = MinMaxScaler(
+                feature_range = (min_value, max_value)
+            )
+        elif scaling_type == "maxabs":
+            scaler = MaxAbsScaler()
         else:
             Exception(f"Unknown scaling type {scaling_type}.")
         scaled_data = scaler.fit_transform(flat_data)
@@ -242,8 +252,6 @@ def scale_raster(
 
     with rasterio.open(dst_raster_path, 'w', **metadata) as dst:
         dst.write(scaled_raster_data.astype(rasterio.float32), 1)
-
-    return dst_raster_path
 
 
 def warp_vector(
@@ -443,7 +451,7 @@ def preprocess_evidence_layers(
 def transform_raster(
     src_raster_path,
     dst_raster_path,
-    method: str = "log"
+    method: str = Literal["log","abs","sqrt"]
 ) -> None:
     """
     Apply a transformation function to a raster image.
