@@ -101,12 +101,16 @@ class SSCMALitModule(LightningModule):
         # by default lightning executes validation step sanity checks before training starts,
         # so it's worth to make sure validation metrics don't store results from these checks
         self.val_loss.reset()
-
-        self.val_ssim.reset()
-        self.val_psnr.reset()
-
         self.val_ssim_best.reset()
         self.val_psnr_best.reset()
+
+    def on_validation_start(self) -> None:
+        """Lightning hook that is called when validation begins."""
+        # by default lightning executes validation step sanity checks before validation starts,
+        # so it's worth to make sure validation metrics don't store results from these checks
+        self.val_loss.reset()
+        self.val_ssim.reset()
+        self.val_psnr.reset()
 
     def compute_loss(
             self,
@@ -233,7 +237,7 @@ class SSCMALitModule(LightningModule):
         """
         imgs, _, lons, lats, _, _, pca_matrix = batch
         img_input = torch.einsum('ijkl,ijm->imkl', imgs, pca_matrix.detach().half()) if len(pca_matrix.shape) != 1 else imgs
-        
+
         feats, _, _ = self.net.encoder(img_input)
         feats = feats[:,0,:].detach().cpu().squeeze()
 

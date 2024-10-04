@@ -2,6 +2,7 @@ import os
 import json
 from pathlib import Path
 from tqdm import tqdm
+from typing import List, Dict
 
 # CDR intergration imports
 import atexit
@@ -11,6 +12,7 @@ import httpx
 import ngrok
 import uvicorn
 import uvicorn.logging
+import optuna
 
 from fastapi.security import APIKeyHeader
 from fastapi import (BackgroundTasks, Depends, FastAPI, HTTPException, Request, status)
@@ -94,55 +96,134 @@ def run_ta3_pipeline(
             "paths.data_dir=data",
             "paths.log_dir=logs",
             "trainer=gpu",
-            "trainer.min_epochs=5",
-            "trainer.max_epochs=50",
+            "trainer.min_epochs=1",
+            "trainer.max_epochs=10",
         ]
     )
-
     utils.print_config_tree(pretrain_cfg)
     pretrain_metrics, pretrain_objs = pretrain(pretrain_cfg)
 
-    print("Training classifier using pretrained MAE.")
+    print("Preparing classifier overrides")
     backbone_ckpt_embeddings = pretrain_objs['trainer'].checkpoint_callback.dirpath+f"/embeddings_d{pretrain_cfg.model.net.enc_dim}.npy"
-    train_cfg = utils.build_hydra_config_notebook(
-        overrides=[
-            "experiment=classifier_template.yaml",
-            f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
-            f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
-            f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
-            f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
-            "paths.data_dir=data",
-            "paths.log_dir=logs",
-            f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
-            f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
-            # trainer args
-            "trainer=gpu",
-            "trainer.min_epochs=10",
-            "trainer.max_epochs=100",
-            # data args
-            # f"data.window_size=5",
-            f"data.tif_dir={raster_stack_path.parent}",
-            f"data.likely_neg_range={list(model_event_obj.train_config.negative_sampling_fraction)}", #{str(model_event_obj.train_config.likely_negative_range)}",
-            f"data.frac_train_split=0.8", #{model_event_obj.train_config.fraction_train_split}",
-            f"data.multiplier=20", #{model_event_obj.train_config.upsample_multiplier}",
-            # model args
-            f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
-            f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
-            f"model.net.dropout_rate=[0.0,{model_event_obj.train_config.dropout},{model_event_obj.train_config.dropout}]", #{str(model_event_obj.train_config.dropout)}",
-            f"model.smoothing={model_event_obj.train_config.smoothing}",
-            f"model.optimizer.lr=1e-3", #{model_event_obj.train_config.learning_rate}",
-            f"model.optimizer.weight_decay=1e-2", #{model_event_obj.train_config.weight_decay}",
-            # f"model.net.backbone_net.patch_size=1",
-            # f"model.net.backbone_net.enc_dim=256",
-            # f"model.net.backbone_net.encoder_layer=6",
-            # f"model.net.backbone_net.encoder_head=8",
-            # f"model.net.backbone_net.dec_dim=128",
-            # f"model.net.backbone_net.decoder_layer=2",
-            # f"model.net.backbone_net.decoder_head=4",
-            # f"model.net.backbone_net.mask_ratio=0.0",
-        ]
-    )
 
+    fixed_overrides = [
+        "experiment=classifier_template.yaml",
+        f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+        f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+        f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
+        # "logger=csv",
+        f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
+        "paths.data_dir=data",
+        "paths.log_dir=logs",
+        f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+        f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+        # trainer args
+        "trainer=gpu",
+        "trainer.min_epochs=10",
+        "trainer.max_epochs=50",
+        # data args
+        f"data.tif_dir={raster_stack_path.parent}",
+        f"data.frac_train_split=0.8", #{model_event_obj.train_config.fraction_train_split}",
+        f"data.multiplier=20", #{model_event_obj.train_config.upsample_multiplier}",
+        # model args
+        f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
+        f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
+        f"model.optimizer.lr=1e-3", #{model_event_obj.train_config.learning_rate}",
+        f"model.optimizer.weight_decay=1e-2", #{model_event_obj.train_config.weight_decay}",
+    ]
+    # fixed_overrides = [
+    #     "experiment=classifier_template.yaml",
+    #     f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+    #     f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+    #     f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
+    #     "logger=csv",
+    #     f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
+    #     "paths.data_dir=data",
+    #     "paths.log_dir=logs",
+    #     f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+    #     f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+    #     # trainer args
+    #     "trainer=gpu",
+    #     "trainer.min_epochs=10",
+    #     "trainer.max_epochs=50",
+    #     # data args
+    #     f"data.tif_dir={raster_stack_path.parent}",
+    #     # model args
+    #     f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
+    #     f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
+    # ] # - after schemas get updated
+
+    exposed_params_dict = model_event_obj.train_config.__dict__
+    exposed_overrides = []
+    optuna_params_dict = {}
+    for key, value in exposed_params_dict.items():
+        if key == "smoothing":
+            if value:
+                exposed_overrides.append(f"model.smoothing={model_event_obj.train_config.smoothing}")
+            else:
+                optuna_params_dict[key] = lambda x: f"model.smoothing={x}"
+        elif key == "dropout":
+            if value:
+                exposed_overrides.append(f"model.net.dropout_rate=[0.0,{model_event_obj.train_config.dropout},{model_event_obj.train_config.dropout}]")
+            else:
+                optuna_params_dict[key] = lambda x: f"model.net.dropout_rate=[0.0,{x},{x}]"
+        elif key == "negative_sampling_fraction":
+            if value:
+                exposed_overrides.append(f"data.likely_neg_range={list(model_event_obj.train_config.negative_sampling_fraction)}")
+            else:
+                optuna_params_dict[key] = lambda x,y: f"data.likely_neg_range={[x,y]}"
+        else:
+            raise ValueError(f"Unexpected key: {key}")
+
+        # if key == "fraction_train_split":
+        #     if value:
+        #         exposed_overrides.append(f"data.frac_train_split={model_event_obj.train_config.fraction_train_split}")
+        #     else:
+        #         optuna_params_dict[key] = lambda x: f"data.frac_train_split={x}"
+        # elif key == "upsample_multiplier":
+        #     if value:
+        #         exposed_overrides.append(f"data.multiplier={model_event_obj.train_config.upsample_multiplier}")
+        #     else:
+        #         optuna_params_dict[key] = lambda x: f"data.multiplier={x}"
+        # elif key == "learning_rate":
+        #     if value:
+        #         exposed_overrides.append(f"model.optimizer.lr={model_event_obj.train_config.learning_rate}")
+        #     else:
+        #         optuna_params_dict[key] = lambda x: f"model.optimizer.lr={x}"
+        # elif key == "weight_decay":
+        #     if value:
+        #         exposed_overrides.append(f"model.optimizer.weight_decay={model_event_obj.train_config.weight_decay}")
+        #     else:
+        #         optuna_params_dict[key] = lambda x: f"model.optimizer.weight_decay={x}"
+        # elif key == "smoothing":
+        #     if value:
+        #         exposed_overrides.append(f"model.smoothing={model_event_obj.train_config.smoothing}")
+        #     else:
+        #         optuna_params_dict[key] = lambda x: f"model.smoothing={x}"
+        # elif key == "likely_negative_range":
+        #     if value:
+        #         exposed_overrides.append(f"data.likely_neg_range={list(model_event_obj.train_config.likely_negative_range)}")
+        #     else:
+        #         optuna_params_dict[key] = lambda x,y: f"data.likely_neg_range={[x,y]}"
+        # elif key == "dropout":
+        #     if value:
+        #         exposed_overrides.append(f"model.net.dropout_rate={list(model_event_obj.train_config.dropout)}")
+        #     else:
+        #         optuna_params_dict[key] = lambda x,y,z: f"model.net.dropout_rate={[x,y,z]}"
+        # else:
+        #     raise ValueError(f"Unexpected key: {key}")
+        # # - after schemas get updated
+
+    # add exposed (user provided) train configs (no optuna)
+    fixed_overrides += exposed_overrides
+
+    if len(optuna_params_dict) > 0:
+        print(f"Running hyperparameter search for params: {list(optuna_params_dict.keys())}")
+        optuna_overrides, optuna_trial = utils.run_optuna_study(fixed_overrides, optuna_params_dict)
+        fixed_overrides += optuna_overrides
+
+    print("Training classifier using pretrained MAE.")
+    train_cfg = utils.build_hydra_config_notebook(overrides=fixed_overrides)
     utils.print_config_tree(train_cfg)
     train_metrics, train_objs = train(train_cfg)
     train_cfg.ckpt_path = train_objs["trainer"].checkpoint_callback.best_model_path

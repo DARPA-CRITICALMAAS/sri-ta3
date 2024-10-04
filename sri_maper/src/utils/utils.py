@@ -13,6 +13,8 @@ from os import makedirs
 
 from sri_maper.src.utils import pylogger, rich_utils
 
+
+
 log = pylogger.get_pylogger(__name__)
 
 
@@ -221,13 +223,13 @@ def build_hydra_config_notebook(
     """Makes Hydra config compatible with Jupyter Notebook"""
     with hydra.initialize_config_module(config_module=config_module, version_base="1.3"):
         cfg = hydra.compose(
-            config_name=config_name, 
+            config_name=config_name,
             overrides=[
                 f"paths.root_dir={root_dir}",
                 "paths.output_dir=${hydra.run.dir}",
                 "extras.print_config=false",
                 "extras.enforce_tags=false",
-            ] + overrides, 
+            ] + overrides,
             return_hydra_config=True
         )
         hydra.core.hydra_config.HydraConfig.instance().set_config(cfg)
@@ -241,9 +243,9 @@ def revert_sync_batchnorm(module, batch_norm_class):
     module_output = module
     if isinstance(module, torch.nn.modules.batchnorm.SyncBatchNorm):
         module_output = batch_norm_class(module.num_features,
-                                         module.eps, module.momentum,
-                                         module.affine,
-                                         module.track_running_stats)
+                                        module.eps, module.momentum,
+                                        module.affine,
+                                        module.track_running_stats)
         if module.affine:
             with torch.no_grad():
                 module_output.weight = module.weight

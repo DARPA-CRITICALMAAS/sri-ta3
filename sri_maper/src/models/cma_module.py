@@ -93,11 +93,14 @@ class CMALitModule(LightningModule):
         self.val_auprc = BinaryAveragePrecision(thresholds=None)
         self.test_auprc = BinaryAveragePrecision(thresholds=None)
 
+        # metric objects for calculating and averaging F1 score across batches
+        self.val_f1 = BinaryF1Score()
+        self.test_f1 = BinaryF1Score(threshold=self.hparams.threshold)
+
         # additional metrics
         self.test_bal_acc = MulticlassAccuracy(num_classes=2, average="macro")
         self.test_acc = BinaryAccuracy(threshold=self.hparams.threshold)
         self.test_mcc = BinaryMatthewsCorrCoef(threshold=self.hparams.threshold)
-        self.test_f1 = BinaryF1Score(threshold=self.hparams.threshold)
         self.test_recall = BinaryRecall(threshold=self.hparams.threshold)
         self.test_acc1 = BinaryAccuracy(threshold=self.hparams.threshold)
 
@@ -109,7 +112,8 @@ class CMALitModule(LightningModule):
         # for tracking best so far validation AUC
         self.val_auc_best = MaxMetric()
         self.val_auprc_best = MaxMetric()
-    
+        self.val_f1_best = MaxMetric()
+
     def on_save_checkpoint(self, checkpoint):
         del_k = []
         for k in checkpoint['state_dict'].keys():
@@ -120,7 +124,7 @@ class CMALitModule(LightningModule):
         for k in del_k: del checkpoint['state_dict'][k]
 
     def forward(
-        self, 
+        self,
         x: torch.Tensor,
         cols: torch.Tensor,
         rows: torch.Tensor,
@@ -136,7 +140,7 @@ class CMALitModule(LightningModule):
         return self.net(x, cols, rows, pca_matrix)
 
     def calibrated_forward(
-        self, 
+        self,
         x: torch.Tensor,
         cols: torch.Tensor,
         rows: torch.Tensor,
@@ -156,8 +160,18 @@ class CMALitModule(LightningModule):
         # by default lightning executes validation step sanity checks before training starts,
         # so it's worth to make sure validation metrics don't store results from these checks
         self.val_loss.reset()
-        self.val_auc.reset()
         self.val_auc_best.reset()
+        self.val_auprc_best.reset()
+        self.val_f1_best.reset()
+
+    def on_validation_start(self) -> None:
+        """Lightning hook that is called when validation begins."""
+        # by default lightning executes validation step sanity checks before validation starts,
+        # so it's worth to make sure validation metrics don't store results from these checks
+        self.val_loss.reset()
+        self.val_auc.reset()
+        self.val_auprc.reset()
+        self.val_f1.reset()
 
     def model_step(
         self, batch: Tuple[torch.Tensor], calibrated: bool = False
@@ -221,20 +235,26 @@ class CMALitModule(LightningModule):
         self.val_loss(loss.item())
         self.val_auc(preds, targets)
         self.val_auprc(preds.squeeze(), targets.squeeze().to(torch.int))
+        self.val_f1(preds.squeeze(), targets.squeeze().to(torch.int))
         self.log("val/loss",    self.val_loss,  on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc",     self.val_auc,   on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auprc",   self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/f1",      self.val_f1,    on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
         auc = self.val_auc.compute()  # get current val auc
         auprc = self.val_auprc.compute()
+        f1 = self.val_f1.compute()
         self.val_auc_best(auc)  # update best so far val auc
         self.val_auprc_best(auprc)
+        self.val_f1_best(f1)
         # log `val_auc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
         self.log("val/auc_best",    self.val_auc_best.compute(),    sync_dist=True, prog_bar=True)
         self.log("val/auprc_best",  self.val_auprc_best.compute(),  sync_dist=True, prog_bar=True)
+        self.log("val/f1_best",     self.val_f1_best.compute(),     sync_dist=True, prog_bar=True)
+
 
     def test_step(self, batch: Tuple[torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
@@ -293,12 +313,12 @@ class CMALitModule(LightningModule):
             if len(pca_matrix.shape) != 1:
                 attribution = ig.attribute(
                     patch.requires_grad_(),
-                    additional_forward_args=(col, row, pca_matrix.half()), 
+                    additional_forward_args=(col, row, pca_matrix.half()),
                     n_steps=12
                 ).mean(dim=(-1,-2)).detach()
             else:
                 attribution = ig.attribute(
-                    patch.requires_grad_(), 
+                    patch.requires_grad_(),
                     additional_forward_args=(col, row),
                     n_steps=12
                 ).mean(dim=(-1,-2)).detach()

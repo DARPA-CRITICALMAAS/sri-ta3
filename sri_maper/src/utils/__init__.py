@@ -11,7 +11,7 @@ from sri_maper.src.utils.utils import (
     task_wrapper,
     build_hydra_config_notebook,
     revert_sync_batchnorm,
-    contains_sync_batchnorm,
+    contains_sync_batchnorm
 )
 from sri_maper.src.utils.storage_utils import write_tif, write_embeddings, collect_gpu_results
 from sri_maper.src.utils.posthoc_utils import BinaryTemperatureScaling, ThresholdMoving
@@ -26,3 +26,4 @@ from sri_maper.src.utils.cdr_utils import (
     send_processed_evidence_layer,
     CDR_Settings
 )
+from sri_maper.src.utils.optuna_utils import run_optuna_study

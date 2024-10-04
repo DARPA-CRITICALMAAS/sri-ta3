@@ -3,8 +3,9 @@
 defaults:
   - override /preprocess: default.yaml
   - override /model: maevit_classifier.yaml
-  - override /trainer: ddp
+  - override /trainer: gpu
   - override /callbacks: default.yaml
+  # - override /hparams_search: default_optuna.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
