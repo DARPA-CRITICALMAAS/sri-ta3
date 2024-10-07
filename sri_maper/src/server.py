@@ -47,12 +47,13 @@ def run_ta3_pipeline(
     deposits_path = utils.download_deposits(model_event_obj, app_settings=app_settings)
 
     print("Processing label raster.")
-    processed_label_raster_path = preprocessing.process_label_raster(
+    processed_label_raster_path, number_of_deposits = preprocessing.process_label_raster(
         event_obj=model_event_obj,
         deposits_csv_path=deposits_path,
         aoi=aoi_geopkg_path,
         reference_layer_path=reference_layer_path
     )
+    print(f"The number of fully rasterized deposits is: {number_of_deposits}")
 
     print("Downloading evidence layers.")
     evidence_layer_paths = utils.download_evidence_layers(model_event_obj)
@@ -91,7 +92,7 @@ def run_ta3_pipeline(
             f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
             f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
             f"data.tif_dir={raster_stack_path.parent}",
-            "data.batch_size=128",
+            "data.batch_size=256",
             f"model.net.input_dim={len(processed_evidence_layer_paths)}",
             "paths.data_dir=data",
             "paths.log_dir=logs",
@@ -125,6 +126,7 @@ def run_ta3_pipeline(
         f"data.tif_dir={raster_stack_path.parent}",
         f"data.frac_train_split=0.8", #{model_event_obj.train_config.fraction_train_split}",
         f"data.multiplier=20", #{model_event_obj.train_config.upsample_multiplier}",
+        f"data.batch_size={32 if number_of_deposits < 50 else 128 if number_of_deposits > 100 else 64}",
         # model args
         f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
         f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
@@ -148,6 +150,7 @@ def run_ta3_pipeline(
     #     "trainer.max_epochs=50",
     #     # data args
     #     f"data.tif_dir={raster_stack_path.parent}",
+    #     f"data.batch_size={32 if number_of_deposits < 50 else 128 if number_of_deposits > 100 else 64}",
     #     # model args
     #     f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
     #     f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",

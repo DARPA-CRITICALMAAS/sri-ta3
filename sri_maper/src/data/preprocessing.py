@@ -735,7 +735,6 @@ def process_label_raster(
     clipped_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_clipped.tif')
     aligned_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_aligned.tif')
     dilated_file = deposits_csv_path.parent / (deposits_csv_path.stem + '_processed.tif')
-    label_raster_path = dilated_file
 
     df = pd.read_csv(deposits_csv_path)
     deposit_type = event_obj.cma.mineral
@@ -780,7 +779,14 @@ def process_label_raster(
         dilation_size=dilation_size,
         label_raster=True
     )
-    return label_raster_path
+    ### Find out the number of rasterized deposits ###
+    # Load the raster data
+    with rasterio.open(dilated_file) as src:
+        raster_data = src.read(1)
+    # Calculate the number of ones
+    num_of_deposits = np.count_nonzero(raster_data == 1)
+
+    return dilated_file, num_of_deposits
 
 
 def create_raster_stack_yaml(
