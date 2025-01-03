@@ -628,7 +628,7 @@ def pu_downsample(
     likely_negatives_idx = u_dist_sort_idx[int(len(u_dist_sort_idx)*likely_neg_range[0]):int(len(u_dist_sort_idx)*likely_neg_range[1])]
     ds_df_n = ds_df_u.iloc[likely_negatives_idx]
     # randomly downsample "likely" negatives
-    num_negatives = int (ds_df_p.shape[0]) * multiplier
+    num_negatives = int(ds_df_p.shape[0] * multiplier)
     ds_df_n = ds_df_n.sample(n=num_negatives, replace=False, random_state=seed)
     # combine positives / negatives
     ds_df = pd.concat([ds_df_n, ds_df_p], axis=0).reset_index(drop=True)

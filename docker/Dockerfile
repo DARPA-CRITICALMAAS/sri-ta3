@@ -1,7 +1,7 @@
-# loads base image
+# Load base image
 FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime
 
-# installs some basic utilities
+# Install basic utilities
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     git \
     curl \
@@ -12,10 +12,10 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
-# installs GDAL
+# Install GDAL
 RUN conda install -c conda-forge "gdal>=3.0.2, <4.0.0"
 
-# Install dependencies
+# Install Python dependencies
 RUN python3 -m pip install --upgrade pip wheel
 COPY setup.py /workspace/
 COPY README.md /workspace/
@@ -25,10 +25,23 @@ RUN python3 -m pip install -e .
 # Install .autoenv for automatic conda env activation and tab completion
 RUN echo "autoenv() { [[ -f \"\$PWD/.autoenv\" ]] && source .autoenv ; } ; cd() { builtin cd \"\$@\" ; autoenv ; } ; autoenv" >> ~/.bashrc
 
-# Add local files
+# Add DOI Root Certificate
+COPY docker/DOIRootCA2.crt /usr/local/share/ca-certificates
+RUN chmod 644 /usr/local/share/ca-certificates/DOIRootCA2.crt && update-ca-certificates
+
+# Set environment variables for HTTPS tools
+ENV PIP_CERT="/etc/ssl/certs/ca-certificates.crt" \
+    SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt" \
+    CURL_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt" \
+    REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt" \
+    AWS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+
+# Create directories for local files
 RUN mkdir /workspace/data
 RUN mkdir /workspace/logs
 
-# Run jupyterlab in the background by default
+# Expose port for JupyterLab
 EXPOSE 8888
+
+# Run JupyterLab by default
 CMD ["jupyter", "lab", "--allow-root", "--NotebookApp.token=''"]

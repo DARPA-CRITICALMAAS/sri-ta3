@@ -25,7 +25,7 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
 
     log.info(f"Preprocessing rasters...")
     hydra.utils.call(cfg.preprocess)
-    
+
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
@@ -52,7 +52,7 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
 
     # preparation
     model = model.__class__.load_from_checkpoint(cfg.ckpt_path, net=model.net)
-    
+
     if "strategy" not in cfg.get("trainer") and model.net.contains_sync_batchnorm():
         # multi-GPU/CPU process train to single GPU/CPU process inference fix
         log.warning("Model checkpoint was trained with multi-GPU/CPU - reverting to single GPU/CPU")
@@ -61,13 +61,13 @@ def build_map(cfg: DictConfig) -> Tuple[dict, dict]:
     if "temperature" not in cfg.model:
         datamodule.setup("validate")
         model_calibrator = utils.BinaryTemperatureScaling(model)
-        opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches)
+        opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches, drop_last=False)
         del model_calibrator
         log.info(f"Optimal temperature: {opt_temp:.3f}")
         model.set_temperature(opt_temp)
     else:
         model.set_temperature(cfg.model.temperature)
-    
+
     model.hparams.extract_attributions = cfg.model.extract_attributions
 
     log.info("Starting map build!")

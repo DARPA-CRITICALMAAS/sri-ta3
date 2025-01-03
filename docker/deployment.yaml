@@ -95,6 +95,8 @@ spec:
               value: ${CDR_TOKEN}
             - name: CDR_HOST
               value: ${CDR_HOST}
+            - name: CALLBACK_URL
+              value: ${CALLBACK_URL}
             - name: NGROK_AUTHTOKEN
               value: ${NGROK_AUTHTOKEN}
             - name: NGROK_SECRET

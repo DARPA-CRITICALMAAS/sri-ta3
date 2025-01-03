@@ -81,6 +81,23 @@ The directory structure looks like this:
 ## Installation
 This repo is compatible with running locally, on docker locally, or on docker in a Kubernetes cluster. Please **follow the corresponding instrcutions exactly, carefully** so install is smooth. Once you are familiar with the structure, you can make changes. NOTE - the repo is currently DEPENDENT on having live [CDR](https://github.com/DARPA-CRITICALMAAS/cdr) and [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) instances to recieve the inputs necessary to run as a server.
 
+### System Requirements
+To run this model efficiently, the following hardware specifications were used during development and testing:
+
+```
+GPU:
+    Number: 1
+    Type: NVIDIA A5000 (or equivalent)
+CPU:
+    Total Cores: 16
+Memory:
+    Total RAM: 64-128 GB
+```
+
+`Note:` Most experiments require 64 GB of RAM; however, working with large areas of interest and/or high-resolution rasters (e.g., CEUS MVT from Hackathon 3 at 500m resolution) require 128 GB of RAM.
+
+These specifications are recommended to ensure optimal performance and to handle computationally intensive tasks efficiently. While the model may run on lower-end hardware, performance and processing time may be significantly impacted.
+
 ### Local install and run
 This setup presents the easiest installation but is more brittle than using docker containers. Please make a virtual environment of your choosing, source the environment, clone the repo, and install the code using `setup.py`. Below are example commands to do so.
 ```bash

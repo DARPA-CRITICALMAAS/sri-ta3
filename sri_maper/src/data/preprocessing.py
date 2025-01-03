@@ -516,13 +516,11 @@ def preprocess_raster(
     imputed_file = layer.parent / (layer.stem + "_imputed" + layer.suffix)
     clipped_file = layer.parent / (layer.stem + "_clipped" + layer.suffix)
     aligned_file = layer.parent / (layer.stem + "_aligned" + layer.suffix)
-    dilated_file = layer.parent / (layer.stem + "_dilated" + layer.suffix)
     olr_file = layer.parent / (layer.stem + "_olr" + layer.suffix)
-    if transform_methods_dict['transform']:
-        scaled_file = layer.parent / (layer.stem + "_scaled" + layer.suffix)
-        transform_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
-    else:
-        scaled_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
+    scaled_file = layer.parent / (layer.stem + "_scaled" + layer.suffix)
+    if transform_methods_dict["transform"]:
+        transform_file = layer.parent / (layer.stem + "_transformed" + layer.suffix)
+    dilated_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
 
     format_nodata_crs(
         src_raster_path=layer,
@@ -550,13 +548,8 @@ def preprocess_raster(
         dst_raster_path=aligned_file,
         reference_raster_path=reference_layer_path,
     )
-    dilate_raster( # dilate
-        src_raster_path=aligned_file,
-        dst_raster_path=dilated_file,
-        dilation_size=window_size,
-    )
     remove_outliers_tukey_raster(
-        src_raster_path=dilated_file,
+        src_raster_path=aligned_file,
         dst_raster_path=olr_file,
     )
     scale_raster(
@@ -570,9 +563,18 @@ def preprocess_raster(
             dst_raster_path=transform_file,
             method=transform_methods_dict['transform']
         )
-        return transform_file
+        dilate_raster( # dilate
+            src_raster_path=transform_file,
+            dst_raster_path=dilated_file,
+            dilation_size=window_size,
+        )
     else:
-        return scaled_file
+        dilate_raster( # dilate
+            src_raster_path=scaled_file,
+            dst_raster_path=dilated_file,
+            dilation_size=window_size,
+        )
+    return dilated_file
 
 
 def find_shapefiles(directory):
@@ -625,18 +627,18 @@ def preprocess_vector(
     if len(shp_file) > 1 or len(shp_file) == 0: raise Exception(f"Cannot process vector file {layer}.")
     shp_file = Path(shp_file[0])
     # prepares preprocessing file names
-    warped_shp_file = layer.parent / layer.stem / (shp_file.stem + "_warped" + shp_file.suffix)
+    warped_shp_file = (
+        layer.parent / layer.stem / (shp_file.stem + "_warped" + shp_file.suffix)
+    )
     rasterized_file = layer.parent / (layer.stem + "_rasterized.tif")
-    proximity_file = rasterized_file.parent / (rasterized_file.stem +"_proximity" + rasterized_file.suffix)
-    clipped_file = rasterized_file.parent / (rasterized_file.stem +"_clipped" + rasterized_file.suffix)
-    aligned_file = rasterized_file.parent / (rasterized_file.stem +"_aligned" + rasterized_file.suffix)
-    dilated_file = rasterized_file.parent / (rasterized_file.stem +"_dilated" + rasterized_file.suffix)
-    olr_file = rasterized_file.parent / (rasterized_file.stem +"_olr" + rasterized_file.suffix)
-    if transform_methods_dict['transform']:
-        scaled_file = layer.parent / (layer.stem + "_scaled" + layer.suffix)
-        transform_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
-    else:
-        scaled_file = layer.parent / (layer.stem + "_processed" + layer.suffix)
+    proximity_file = layer.parent / (layer.stem + "_proximity" + rasterized_file.suffix)
+    clipped_file = layer.parent / (layer.stem + "_clipped" + rasterized_file.suffix)
+    aligned_file = layer.parent / (layer.stem + "_aligned" + rasterized_file.suffix)
+    olr_file = layer.parent / (layer.stem + "_olr" + rasterized_file.suffix)
+    scaled_file = layer.parent / (layer.stem + "_scaled" + rasterized_file.suffix)
+    if transform_methods_dict["transform"]:
+        transform_file = layer.parent / (layer.stem + "_transformed" + rasterized_file.suffix)
+    dilated_file = layer.parent / (layer.stem + "_processed" + rasterized_file.suffix)
 
     warp_vector(
         src_vector_path = shp_file,
@@ -664,13 +666,8 @@ def preprocess_vector(
         dst_raster_path=aligned_file,
         reference_raster_path=reference_layer_path,
     )
-    dilate_raster(
-        src_raster_path=aligned_file,
-        dst_raster_path=dilated_file,
-        dilation_size=window_size,
-    )
     remove_outliers_tukey_raster(
-        src_raster_path=dilated_file,
+        src_raster_path=aligned_file,
         dst_raster_path=olr_file,
     )
     scale_raster(
@@ -684,9 +681,18 @@ def preprocess_vector(
             dst_raster_path=transform_file,
             method=transform_methods_dict['transform']
         )
-        return transform_file
+        dilate_raster(
+            src_raster_path=transform_file,
+            dst_raster_path=dilated_file,
+            dilation_size=window_size,
+        )
     else:
-        return scaled_file
+        dilate_raster(
+            src_raster_path=scaled_file,
+            dst_raster_path=dilated_file,
+            dilation_size=window_size,
+        )
+    return dilated_file
 
 
 def deposits_filtering(

@@ -1,15 +1,18 @@
 import os
+import glob
 import json
+import zipfile
+import traceback
 from pathlib import Path
 from tqdm import tqdm
 from typing import List, Dict
 
 # CDR intergration imports
+import requests
 import atexit
 import hashlib
 import hmac
 import httpx
-import ngrok
 import uvicorn
 import uvicorn.logging
 import optuna
@@ -26,236 +29,286 @@ from sri_maper.src.pretrain import pretrain
 from sri_maper.src.train import train
 from sri_maper.src.map import build_map
 
+bot_token = None
+auth_token = None
+
+def get_authorized_chat_ids():
+    """Fetch chat IDs of users who sent the correct token"""
+    url = f'https://api.telegram.org/bot{bot_token}/getUpdates'
+    response = requests.get(url)
+    if response.status_code == 200:
+        updates = response.json()['result']
+        # Extract chat IDs only from messages containing the correct token
+        chat_ids = list(set(str(update['message']['chat']['id'])
+                        for update in updates
+                        if 'message' in update
+                        and 'text' in update['message']
+                        and update['message']['text'] == auth_token))
+        return chat_ids if chat_ids else ['5186897455']  # Fallback to original chat ID
+    return ['5186897455']
+
+def send_telegram_message(message_body):
+    chat_ids = get_authorized_chat_ids()
+    for chat_id in chat_ids:
+        url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+        payload = {
+            'chat_id': chat_id,
+            'text': message_body
+        }
+        response = requests.post(url, data=payload)
+        if response.status_code != 200:
+            print(f"Failed to send message to chat ID {chat_id}: {response.text}")
 
 def run_ta3_pipeline(
     event_id: int,
     app_settings: utils.CDR_Settings
 ):
-    print("Querying CDR for event.")
-    model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
+    try:
+        print("Querying CDR for event.")
+        model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
+        if bot_token: send_telegram_message(f"[1/16]: New CMA: {model_event_json['event']['payload']['cma']['description']} ({event_id}) 👀")
+        if bot_token: send_telegram_message(f"[2/16]: Queried CDR for event ✅")
 
-    print("Parsing CDR event payload.")
-    model_event_obj = utils.parse_event_payload_result(model_event_json)
+        print("Parsing CDR event payload.")
+        model_event_obj = utils.parse_event_payload_result(model_event_json)
+        if bot_token: send_telegram_message(f"[3/16]: Parsed CDR event payload ✅")
 
-    print("Generating AOI geopackage.")
-    aoi_geopkg_path = utils.create_aoi_geopkg(model_event_obj)
+        print("Generating AOI geopackage.")
+        aoi_geopkg_path = utils.create_aoi_geopkg(model_event_obj)
+        if bot_token: send_telegram_message(f"[4/16]: Generated AOI geopackage ✅")
 
-    print("Downloading reference layer (aka template_raster.tif).")
-    reference_layer_path = utils.download_reference_layer(model_event_obj)
+        print("Downloading preprocessed evidence and label rasters.")
+        processed_evidence_layer_paths, processed_label_raster_path, number_of_deposits, num_of_pixels = utils.download_preprocessed_layers(model_event_obj)
+        print(f'This CMA has {number_of_deposits} deposits.')
+        if bot_token: send_telegram_message(f"[5/16]: Downloaded {len(processed_evidence_layer_paths)} preprocessed evidence and 1 label rasters | # of depos.={number_of_deposits} | # of pixels={num_of_pixels} ✅")
 
-    print("Downloading deposits.")
-    deposits_path = utils.download_deposits(model_event_obj, app_settings=app_settings)
+        print("Creating a raster stack.")
+        raster_stack_path = preprocessing.generate_raster_stack(
+            evidence_layer_paths=processed_evidence_layer_paths,
+            label_raster_path=processed_label_raster_path
+        )
+        if bot_token: send_telegram_message(f"[6/16]: Created a raster stack ✅")
 
-    print("Processing label raster.")
-    processed_label_raster_path, number_of_deposits = preprocessing.process_label_raster(
-        event_obj=model_event_obj,
-        deposits_csv_path=deposits_path,
-        aoi=aoi_geopkg_path,
-        reference_layer_path=reference_layer_path
-    )
-    print(f"The number of fully rasterized deposits is: {number_of_deposits}")
+        print("Creating raster stack .yaml file.")
+        raster_stack_yaml_path = preprocessing.create_raster_stack_yaml(
+            event_obj=model_event_obj,
+            evidence_layer_paths=processed_evidence_layer_paths,
+            label_raster_path=processed_label_raster_path,
+            raster_stack_path=raster_stack_path
+        )
+        if bot_token: send_telegram_message(f"[7/16]: Created raster stack .yaml file ✅")
 
-    print("Downloading evidence layers.")
-    evidence_layer_paths = utils.download_evidence_layers(model_event_obj)
+        print("Pretraining MAE.")
+        pretrain_cfg = utils.build_hydra_config_notebook(
+            overrides=[
+                "experiment=pretrain_template.yaml",
+                f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+                f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+                f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
+                "logger=csv", # wandb logger has issues in notebooks
+                f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
+                f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+                f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+                f"data.tif_dir={raster_stack_path.parent}",
+                f"data.batch_size={64 if num_of_pixels < 50000 else 128 if num_of_pixels < 150000 else 256 if num_of_pixels < 500000 else 512 if num_of_pixels < 1000000 else 1024}",
+                f"model.net.input_dim={len(processed_evidence_layer_paths)}",
+                "paths.data_dir=data",
+                "paths.log_dir=logs",
+                "trainer=gpu",
+                "trainer.min_epochs=1",
+                f"trainer.max_epochs={40 if num_of_pixels < 50000 else 30 if num_of_pixels < 150000 else 20 if num_of_pixels < 300000 else 10}",
+            ]
+        )
+        utils.print_config_tree(pretrain_cfg)
+        pretrain_metrics, pretrain_objs = pretrain(pretrain_cfg)
+        if bot_token: send_telegram_message(f"[8/16]: Finished pretraining MAE ✅")
 
-    print("Preprocessing evidence layers.")
-    processed_evidence_layer_paths = preprocessing.preprocess_evidence_layers(
-        event_obj=model_event_obj,
-        layers=evidence_layer_paths,
-        aoi=aoi_geopkg_path,
-        reference_layer_path=reference_layer_path
-    )
+        print("Preparing classifier overrides")
+        backbone_ckpt_embeddings =  glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*.npy'))[0]
+        backbone_ckpt = glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*psnr*.ckpt'))[0]
 
-    print("Creating a raster stack.")
-    raster_stack_path = preprocessing.generate_raster_stack(
-        evidence_layer_paths=processed_evidence_layer_paths,
-        label_raster_path=processed_label_raster_path
-    )
-
-    print("Creating raster stack .yaml file.")
-    raster_stack_yaml_path = preprocessing.create_raster_stack_yaml(
-        event_obj=model_event_obj,
-        evidence_layer_paths=processed_evidence_layer_paths,
-        label_raster_path=processed_label_raster_path,
-        raster_stack_path=raster_stack_path
-    )
-
-    print("Pretraining MAE.")
-    pretrain_cfg = utils.build_hydra_config_notebook(
-        overrides=[
-            "experiment=pretrain_template.yaml",
+        fixed_overrides = [
+            "experiment=classifier_template.yaml",
             f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
             f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
             f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
-            # "logger=csv", # wandb logger has issues in notebooks
-            f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
-            f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
-            f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
-            f"data.tif_dir={raster_stack_path.parent}",
-            "data.batch_size=256",
-            f"model.net.input_dim={len(processed_evidence_layer_paths)}",
+            "logger=csv",
+            f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
             "paths.data_dir=data",
             "paths.log_dir=logs",
+            f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+            f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+            # trainer args
             "trainer=gpu",
-            "trainer.min_epochs=1",
-            "trainer.max_epochs=10",
+            "trainer.min_epochs=25",
+            "trainer.max_epochs=50",
+            # data args
+            f"data.tif_dir={raster_stack_path.parent}",
+            f"data.batch_size={16 if number_of_deposits < 25 else 32}", # if number_of_deposits < 50 else 128 if number_of_deposits > 100 else 64}",
+            # model args
+            f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
+            f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
         ]
-    )
-    utils.print_config_tree(pretrain_cfg)
-    pretrain_metrics, pretrain_objs = pretrain(pretrain_cfg)
 
-    print("Preparing classifier overrides")
-    backbone_ckpt_embeddings = pretrain_objs['trainer'].checkpoint_callback.dirpath+f"/embeddings_d{pretrain_cfg.model.net.enc_dim}.npy"
-
-    fixed_overrides = [
-        "experiment=classifier_template.yaml",
-        f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
-        f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
-        f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
-        # "logger=csv",
-        f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
-        "paths.data_dir=data",
-        "paths.log_dir=logs",
-        f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
-        f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
-        # trainer args
-        "trainer=gpu",
-        "trainer.min_epochs=10",
-        "trainer.max_epochs=50",
-        # data args
-        f"data.tif_dir={raster_stack_path.parent}",
-        f"data.frac_train_split=0.8", #{model_event_obj.train_config.fraction_train_split}",
-        f"data.multiplier=20", #{model_event_obj.train_config.upsample_multiplier}",
-        f"data.batch_size={32 if number_of_deposits < 50 else 128 if number_of_deposits > 100 else 64}",
-        # model args
-        f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
-        f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
-        f"model.optimizer.lr=1e-3", #{model_event_obj.train_config.learning_rate}",
-        f"model.optimizer.weight_decay=1e-2", #{model_event_obj.train_config.weight_decay}",
-    ]
-    # fixed_overrides = [
-    #     "experiment=classifier_template.yaml",
-    #     f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
-    #     f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
-    #     f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
-    #     "logger=csv",
-    #     f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
-    #     "paths.data_dir=data",
-    #     "paths.log_dir=logs",
-    #     f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
-    #     f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
-    #     # trainer args
-    #     "trainer=gpu",
-    #     "trainer.min_epochs=10",
-    #     "trainer.max_epochs=50",
-    #     # data args
-    #     f"data.tif_dir={raster_stack_path.parent}",
-    #     f"data.batch_size={32 if number_of_deposits < 50 else 128 if number_of_deposits > 100 else 64}",
-    #     # model args
-    #     f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
-    #     f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
-    # ] # - after schemas get updated
-
-    exposed_params_dict = model_event_obj.train_config.__dict__
-    exposed_overrides = []
-    optuna_params_dict = {}
-    for key, value in exposed_params_dict.items():
-        if key == "smoothing":
-            if value:
-                exposed_overrides.append(f"model.smoothing={model_event_obj.train_config.smoothing}")
+        exposed_params_dict = model_event_obj.train_config.__dict__
+        exposed_overrides = []
+        optuna_params_dict = {}
+        for key, value in exposed_params_dict.items():
+            if key == "fraction_train_split":
+                if value:
+                    exposed_overrides.append(f"data.frac_train_split={model_event_obj.train_config.fraction_train_split}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"data.frac_train_split={x}"
+            elif key == "upsample_multiplier":
+                if value:
+                    exposed_overrides.append(f"data.multiplier={model_event_obj.train_config.upsample_multiplier}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"data.multiplier={x}"
+            elif key == "learning_rate":
+                if value:
+                    exposed_overrides.append(f"model.optimizer.lr={model_event_obj.train_config.learning_rate}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"model.optimizer.lr={x}"
+            elif key == "weight_decay":
+                if value:
+                    exposed_overrides.append(f"model.optimizer.weight_decay={model_event_obj.train_config.weight_decay}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"model.optimizer.weight_decay={x}"
+            elif key == "smoothing":
+                if value:
+                    exposed_overrides.append(f"model.smoothing={model_event_obj.train_config.smoothing}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"model.smoothing={x}"
+            elif key == "likely_negative_range":
+                if value:
+                    exposed_overrides.append(f"data.likely_neg_range={list(model_event_obj.train_config.likely_negative_range)}")
+                else:
+                    optuna_params_dict[key] = lambda x,y: f"data.likely_neg_range={[x,y]}"
+            elif key == "dropout_tuple":
+                if value:
+                    exposed_overrides.append(f"model.net.dropout_rate={list(model_event_obj.train_config.dropout_tuple)}")
+                else:
+                    optuna_params_dict[key] = lambda x,y,z: f"model.net.dropout_rate={[x,y,z]}"
             else:
-                optuna_params_dict[key] = lambda x: f"model.smoothing={x}"
-        elif key == "dropout":
-            if value:
-                exposed_overrides.append(f"model.net.dropout_rate=[0.0,{model_event_obj.train_config.dropout},{model_event_obj.train_config.dropout}]")
-            else:
-                optuna_params_dict[key] = lambda x: f"model.net.dropout_rate=[0.0,{x},{x}]"
-        elif key == "negative_sampling_fraction":
-            if value:
-                exposed_overrides.append(f"data.likely_neg_range={list(model_event_obj.train_config.negative_sampling_fraction)}")
-            else:
-                optuna_params_dict[key] = lambda x,y: f"data.likely_neg_range={[x,y]}"
-        else:
-            raise ValueError(f"Unexpected key: {key}")
+                raise ValueError(f"Unexpected key: {key}")
 
-        # if key == "fraction_train_split":
-        #     if value:
-        #         exposed_overrides.append(f"data.frac_train_split={model_event_obj.train_config.fraction_train_split}")
-        #     else:
-        #         optuna_params_dict[key] = lambda x: f"data.frac_train_split={x}"
-        # elif key == "upsample_multiplier":
-        #     if value:
-        #         exposed_overrides.append(f"data.multiplier={model_event_obj.train_config.upsample_multiplier}")
-        #     else:
-        #         optuna_params_dict[key] = lambda x: f"data.multiplier={x}"
-        # elif key == "learning_rate":
-        #     if value:
-        #         exposed_overrides.append(f"model.optimizer.lr={model_event_obj.train_config.learning_rate}")
-        #     else:
-        #         optuna_params_dict[key] = lambda x: f"model.optimizer.lr={x}"
-        # elif key == "weight_decay":
-        #     if value:
-        #         exposed_overrides.append(f"model.optimizer.weight_decay={model_event_obj.train_config.weight_decay}")
-        #     else:
-        #         optuna_params_dict[key] = lambda x: f"model.optimizer.weight_decay={x}"
-        # elif key == "smoothing":
-        #     if value:
-        #         exposed_overrides.append(f"model.smoothing={model_event_obj.train_config.smoothing}")
-        #     else:
-        #         optuna_params_dict[key] = lambda x: f"model.smoothing={x}"
-        # elif key == "likely_negative_range":
-        #     if value:
-        #         exposed_overrides.append(f"data.likely_neg_range={list(model_event_obj.train_config.likely_negative_range)}")
-        #     else:
-        #         optuna_params_dict[key] = lambda x,y: f"data.likely_neg_range={[x,y]}"
-        # elif key == "dropout":
-        #     if value:
-        #         exposed_overrides.append(f"model.net.dropout_rate={list(model_event_obj.train_config.dropout)}")
-        #     else:
-        #         optuna_params_dict[key] = lambda x,y,z: f"model.net.dropout_rate={[x,y,z]}"
-        # else:
-        #     raise ValueError(f"Unexpected key: {key}")
-        # # - after schemas get updated
+        if bot_token: send_telegram_message(f"[9/16]: Prepared {len(exposed_overrides)} GUI provided overrides ✅")
 
-    # add exposed (user provided) train configs (no optuna)
-    fixed_overrides += exposed_overrides
+        # add exposed (user provided) train configs (no optuna yet)
+        fixed_overrides += exposed_overrides
 
-    if len(optuna_params_dict) > 0:
-        print(f"Running hyperparameter search for params: {list(optuna_params_dict.keys())}")
-        optuna_overrides, optuna_trial = utils.run_optuna_study(fixed_overrides, optuna_params_dict)
-        fixed_overrides += optuna_overrides
+        if len(optuna_params_dict) > 0:
+            print(f"Running hyperparameter search for params: {list(optuna_params_dict.keys())}")
+            optuna_overrides, optuna_trial = utils.run_optuna_study(fixed_overrides,
+                                                                    optuna_params_dict,
+                                                                    num_deposits=number_of_deposits,
+                                                                    n_trials=min(30,10*int(len(optuna_params_dict))))
 
-    print("Training classifier using pretrained MAE.")
-    train_cfg = utils.build_hydra_config_notebook(overrides=fixed_overrides)
-    utils.print_config_tree(train_cfg)
-    train_metrics, train_objs = train(train_cfg)
-    train_cfg.ckpt_path = train_objs["trainer"].checkpoint_callback.best_model_path
+            fixed_overrides += optuna_overrides
+            if bot_token: send_telegram_message(f"[9.1/16]: Prepared {len(optuna_params_dict)} OPTUNA overrides ✅")
 
-    print("Generating maps.")
-    train_cfg.data.batch_size=128
-    output_map_paths, _ = build_map(train_cfg)
-    output_map_paths.sort(reverse=True) # place Uncertainties.tif first
-    output_map_paths = [Path(path) for path in output_map_paths]
+        print("Training classifier using pretrained MAE.")
+        fixed_overrides.remove(f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}")
+        fixed_overrides.append(f"model.net.backbone_ckpt={backbone_ckpt}")
+        fixed_overrides.append("enable_attributions=True")
 
-    print("Uploading results to CDR.")
-    for path in tqdm(output_map_paths):
+        train_cfg = utils.build_hydra_config_notebook(overrides=fixed_overrides)
+        utils.print_config_tree(train_cfg)
+        train_metrics, train_objs = train(train_cfg)
+        train_cfg.ckpt_path = train_objs["trainer"].checkpoint_callback.best_model_path
+        if bot_token: send_telegram_message(f"[10/16]: Finished training classifier ✅")
+
+        print("Generating maps.")
+        train_cfg.data.batch_size=128
+        output_map_paths, _ = build_map(train_cfg)
+        lklhoods_n_uncerts_paths = [output_map_paths.pop(1), output_map_paths.pop(0)] # place Uncertainties.tif first
+        feat_attr_paths = [Path(path) for path in output_map_paths]
+        lklhoods_n_uncerts_paths = [Path(path) for path in lklhoods_n_uncerts_paths]
+        if bot_token: send_telegram_message(f"[11/16]: Generated {len(output_map_paths)} FA and {len(lklhoods_n_uncerts_paths)} LHD/UNCT maps ✅")
+
+        print("Uploading Likelihoods and Uncertainties to CDR.")
+        for path in tqdm(lklhoods_n_uncerts_paths):
+            utils.send_output(
+                output_type=path.stem,
+                output_path=path,
+                payload=model_event_obj,
+                app_settings=app_settings
+            )
+        if bot_token: send_telegram_message(f"[12/16]: Uploaded LHD/UNCT to CDR ✅")
+
+        print("Uploading feature attributes to CDR.")
+        for path in tqdm(feat_attr_paths):
+            utils.send_output(
+                output_type=path.stem,
+                output_path=path,
+                payload=model_event_obj,
+                app_settings=app_settings
+            )
+        if bot_token: send_telegram_message(f"[13/16]: Uploaded FA to CDR ✅")
+
+        print("Packing and uploading .csv files into .zip.")
+        base_path = lklhoods_n_uncerts_paths[0].parent
+        zip_split_path = base_path / Path('splits.zip')
+        files_splits = [base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')]
+        utils.create_zip_file(zip_split_path, files_splits)
         utils.send_output(
-            output_type=path.stem,
-            output_path=path,
+            output_type=zip_split_path.stem,
+            output_path=zip_split_path,
+            payload=model_event_obj,
+            app_settings=app_settings
+        )
+        if bot_token: send_telegram_message(f"[14/16]: Uploaded split_files.zip to CDR ✅")
+
+        print("Packing and uploading metric .json file into .zip.")
+        zip_metric_path = base_path / Path('metrics.zip')
+        output_metrics_file = base_path / Path('metrics.json')
+        utils.reorganize_metrics_file(train_metrics, output_metrics_file)
+        utils.create_zip_file(zip_metric_path, [output_metrics_file])
+        utils.send_output(
+            output_type=zip_metric_path.stem,
+            output_path=zip_metric_path,
+            payload=model_event_obj,
+            app_settings=app_settings
+        )
+        if bot_token: send_telegram_message(f"[15/16]: Uploaded metric_files.zip to CDR ✅")
+
+        if len(optuna_params_dict) > 0:
+            print("Packing and uploading optuna .json file into .zip.")
+            zip_optuna_path = base_path / Path('optuna_search_values.zip')
+            optuna_file = base_path / Path('optuna_search_values.json')
+            with open(optuna_file, 'w') as file:
+                json.dump(optuna_overrides, file, indent=4)
+            files_metrics = [optuna_file]
+            utils.create_zip_file(zip_optuna_path, files_metrics)
+            utils.send_output(
+                output_type=zip_optuna_path.stem,
+                output_path=zip_optuna_path,
+                payload=model_event_obj,
+                app_settings=app_settings
+            )
+            if bot_token: send_telegram_message(f"[15.1/16]: Uploaded optuna_search_values.zip to CDR ✅")
+
+        print(f"event_id={event_id} cma is finished!")
+        if bot_token: send_telegram_message(f"[16/16]: {model_event_json['event']['payload']['cma']['description']} ({event_id}) CMA is finished 🎉")
+        if bot_token: send_telegram_message(f"")
+
+    except Exception as e:
+        print(f"Houston we have a problem! {e}")
+        if bot_token: send_telegram_message(f"Houston we have a problem! {e}")
+
+        error_log_path = Path("./data") / Path(event_id) / Path('error_log.txt')
+        with open(error_log_path, 'w') as f:
+            traceback.print_exc(file=f)
+        zip_error_path = error_log_path.parent / Path('error_logs.zip')
+        files_errors = [error_log_path]
+        utils.create_zip_file(zip_error_path, files_errors)
+        utils.send_output(
+            output_type=zip_error_path.stem,
+            output_path=zip_error_path,
             payload=model_event_obj,
             app_settings=app_settings
         )
 
-    print("Uploading processed evidence layers to CDR.")
-    for evidence_layer_idx, path in tqdm(enumerate(processed_evidence_layer_paths)):
-        utils.send_processed_evidence_layer(
-            layer_path=path,
-            layer=model_event_obj.evidence_layers[evidence_layer_idx],
-            payload=model_event_obj,
-            app_settings=app_settings
-        )
-
-    print(f"event_id={event_id} cma is finished!")
 
 
 server_settings = utils.CDR_Settings(
@@ -268,7 +321,7 @@ server_settings = utils.CDR_Settings(
     local_port = int(os.environ["NGROK_PORT"]),
     registration_id = "",
     registration_secret = os.environ["CDR_HOST"],
-    callback_url = ""
+    callback_url = os.environ["CALLBACK_URL"],
 )
 
 def clean_up():
@@ -280,10 +333,11 @@ def clean_up():
 # register clean_up
 atexit.register(clean_up)
 
-
-# Get ngrok to give us an endpoint
-listener = ngrok.forward(server_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
-server_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
+if not server_settings.callback_url:
+    import ngrok
+    # Get ngrok to give us an endpoint
+    listener = ngrok.forward(server_settings.local_port, authtoken_from_env=True) # Forward the local port through ngrok and get a listener.
+    server_settings.callback_url = listener.url() + "/hook" # Set the callback URL to the ngrok URL plus "/hook".
 
 
 app = FastAPI() # creating an instance
@@ -297,9 +351,12 @@ async def event_handler(
             case Event(event="ping"):
                 print("Received PING!")
             case Event(event="prospectivity_model_run.process"):
-                print("Received model run event payload!")
-                print(evt.payload)
-                run_ta3_pipeline(evt.payload['model_run_id'], server_settings)
+                if evt.payload['model_type'] == 'sri_NN':
+                    print("Received model run event payload with model_type 'sri_NN'!")
+                    print(evt.payload)
+                    run_ta3_pipeline(evt.payload['model_run_id'], server_settings)
+                else:
+                    print(f"Received model run event payload with {evt.payload['model_type']} model_type!")
             case _:
                 print("Nothing to do for event: %s", evt)
 
@@ -367,8 +424,8 @@ def register_system():
         "auth_token": "",
         # Registers for ALL events
         "events": []
-
     }
+
     # creating an httpx client
     client = httpx.Client(follow_redirects=True) # follow_redirects=True argument tells the client to automatically follow redirects
 

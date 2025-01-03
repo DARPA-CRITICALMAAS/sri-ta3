@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def write_tif(results, path, attributions_flag, datamodule):
-    
+
     # defines the tif meta data
     tif_meta = copy(datamodule.data_predict.tif_meta)
     tif_meta.update({
@@ -18,19 +18,19 @@ def write_tif(results, path, attributions_flag, datamodule):
 
     # extracts raster pts and data
     result_pts = np.dot(
-        np.asarray((~tif_meta["transform"]).column_vectors).T, 
+        np.asarray((~tif_meta["transform"]).column_vectors).T,
         np.vstack((results[:,0], results[:,1], np.ones_like(results[:,1])))
     ).astype(int).T
     data = results[:,2:]
-    
+
     output_rasters = [
-        "Likelihoods", 
+        "Likelihoods",
         "Uncertainties",
     ]
 
     if attributions_flag:
         attrs = [None] * len(datamodule.data_predict.tif_tags)
-        for tag, idx in datamodule.data_predict.tif_tags.items(): attrs[int(idx)] = tag
+        for tag, idx in datamodule.data_predict.tif_tags.items(): attrs[int(idx)] = 'feat_attr_' + tag
         output_rasters = output_rasters + attrs[:-1] # last tag is label - doesn't exist
 
     tif_files = []
@@ -39,7 +39,7 @@ def write_tif(results, path, attributions_flag, datamodule):
         tif_data = np.empty(shape=(tif_meta["height"], tif_meta["width"]))
         tif_data[:] = np.nan
         tif_data[result_pts[:,1], result_pts[:,0]] = data[:,idx].astype(float)
-        
+
         # writes the output tif
         tif_file = f"{path}/{tif_layer}.tif"
         with rio.open(tif_file, "w", **tif_meta) as out:
@@ -49,7 +49,7 @@ def write_tif(results, path, attributions_flag, datamodule):
 
 
 def write_embeddings(results, path, datamodule):
-    
+
     # defines the tif meta data
     tif_meta = copy(datamodule.data_predict.tif_meta)
     tif_meta.update({
@@ -62,7 +62,7 @@ def write_embeddings(results, path, datamodule):
 
     # extracts raster pts and data
     result_pts = np.dot(
-        np.asarray((~tif_meta["transform"]).column_vectors).T, 
+        np.asarray((~tif_meta["transform"]).column_vectors).T,
         np.vstack((results[:,0], results[:,1], np.ones_like(results[:,1])))
     ).astype(int).T
     data = results[:,2:]
@@ -90,5 +90,5 @@ def collect_gpu_results(predictions_part, trainer):
     res_df = []
     for n in range(trainer.strategy.world_size):
         res_df.append(pd.read_csv(f"gpu_{n}_result.csv", index_col=False))
-    
+
     return pd.concat(res_df, ignore_index=True).values

@@ -27,10 +27,10 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     # set seed for random number generators in pytorch, numpy and python.random
     if cfg.get("seed"):
         seed_everything(cfg.seed, workers=True)
-    
+
     log.info(f"Preprocessing rasters...")
     hydra.utils.call(cfg.preprocess)
-    
+
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
@@ -76,7 +76,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         if ckpt_path == "":
             log.warning("Best ckpt not found! Using current weights for testing...")
             ckpt_path = None
-        
+
         # preparation
         log.info(f"Best ckpt path: {ckpt_path}")
         model = model.__class__.load_from_checkpoint(ckpt_path, net=model.net)
@@ -84,7 +84,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         # temperature scaling
         if "temperature" not in cfg.model:
             model_calibrator = utils.BinaryTemperatureScaling(model)
-            opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches)
+            opt_temp = model_calibrator.calibrate(datamodule, cfg.trainer.limit_val_batches, drop_last=True)
             del model_calibrator
             log.info(f"Optimal temperature: {opt_temp:.3f}")
             model.set_temperature(opt_temp)
@@ -94,7 +94,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         # theshold selection
         if "threshold" not in cfg.model:
             threshold_selector = utils.ThresholdMoving(model)
-            opt_thr = threshold_selector.search_threshold(f1_score, datamodule, cfg.trainer.limit_val_batches)
+            opt_thr = threshold_selector.search_threshold(f1_score, datamodule, cfg.trainer.limit_val_batches, drop_last=True)
             del threshold_selector
             log.info(f"Optimal threshold: {opt_thr:.3f}")
             model.set_threshold(opt_thr)

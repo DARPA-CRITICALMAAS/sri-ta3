@@ -29,7 +29,7 @@ class BinaryTemperatureScaling(nn.Module):
         return logits / self.temperature
 
     # This function probably should live outside of this class, but whatever
-    def calibrate(self, datamodule, val_fraction):
+    def calibrate(self, datamodule, val_fraction, drop_last=False):
         """
         Tune the tempearature of the model (using the validation set).
         We're going to set it to optimize NLL.
@@ -38,7 +38,7 @@ class BinaryTemperatureScaling(nn.Module):
         nll_criterion = nn.BCEWithLogitsLoss().to(self.model.device)
         ece_criterion = _ECELoss().to(self.model.device)
 
-        val_loader = datamodule.val_dataloader(shuffle=True)
+        val_loader = datamodule.val_dataloader(shuffle=True, drop_last=drop_last)
         batch_limit = int(len(val_loader)*val_fraction)
 
         # First: collect all the logits and labels for the validation set
@@ -134,8 +134,8 @@ class ThresholdMoving(nn.Module):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(device)
 
-    def search_threshold(self, max_metric, datamodule, val_fraction):
-        val_loader = datamodule.val_dataloader(shuffle=True)
+    def search_threshold(self, max_metric, datamodule, val_fraction, drop_last=False):
+        val_loader = datamodule.val_dataloader(shuffle=True, drop_last=drop_last)
         batch_limit = int(len(val_loader)*val_fraction)
 
         # collects all the logits and labels for the validation set

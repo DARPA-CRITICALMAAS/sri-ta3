@@ -9,12 +9,14 @@ import zipfile
 import httpx
 import json
 import ast
+from pydantic import BaseModel
 
 from pathlib import Path
 import geopandas as gpd
 from tqdm import tqdm
 from typing import List
 import rasterio as rio
+import numpy as np
 from rasterio.mask import mask
 from pydantic import BaseModel, Field
 
@@ -56,13 +58,6 @@ def get_event_payload_result(
         f"{app_settings.cdr_host}/v1/prospectivity/model_run?model_run_id={id}", headers=headers
     )
     resp = resp.json()
-
-    # temporary fix for Impute transform method being a string instead of a dict | WILL BE DELETED IN THE FUTURE!!!
-    for idx_l, _ in enumerate(resp['event']['payload']['evidence_layers']):
-        if resp['event']['payload']['evidence_layers'][idx_l]['transform_methods']:
-            for idx_m, method in enumerate(resp['event']['payload']['evidence_layers'][idx_l]['transform_methods']):
-                if "impute_method" in method and "window_size" in method:
-                    resp['event']['payload']['evidence_layers'][idx_l]['transform_methods'][idx_m] = ast.literal_eval(resp['event']['payload']['evidence_layers'][idx_l]['transform_methods'][idx_m])
 
     print("Saving JSON file")
     json_path = data_path / Path(id)
@@ -188,6 +183,46 @@ def download_evidence_layers(
     return ev_lyrs_paths
 
 
+def download_preprocessed_layers(
+    event_obj: ProspectModelMetaData,
+    data_path: Path = Path("./data")
+) -> List:
+    """
+    Downloading fully preprocessed evidence (n) and label (1) layers from CDR
+
+    Parameters:
+    event_obj (ProspectModelMetaData): The prospect model metadata object
+    data_path (Path): The data path
+    """
+    # sets evidence layers location
+    layers_path = data_path / Path(event_obj.model_run_id) / Path("evidence_layers")
+    layers_path.mkdir(parents=True, exist_ok=True)
+
+    # downloads evidence layers
+    evidence_layers_paths = []
+    for layer in tqdm(event_obj.evidence_layers):
+        if layer.label_raster:
+            label_layer_path = download_layer(
+                title="label_raster",
+                url=layer.download_url,
+                dst_dir=layers_path
+            )
+            with rio.open(label_layer_path) as src:
+                raster_data = src.read(1)
+            # Calculate the number of deposits and pixels
+            num_of_deposits = np.count_nonzero(raster_data == 1)
+            num_of_pixels = np.count_nonzero(~np.isnan(raster_data))
+        else:
+            evidence_layer_path = download_layer(
+                title=layer.title, # not ideal
+                url=layer.download_url,
+                dst_dir=layers_path
+            )
+            evidence_layers_paths.append(evidence_layer_path)
+
+    return evidence_layers_paths, label_layer_path, num_of_deposits, num_of_pixels
+
+
 def create_aoi_geopkg(
     event_obj: ProspectModelMetaData,
     data_path: Path = Path("./data")
@@ -292,7 +327,7 @@ def send_output(
 
     # checks outputs file exists
     assert output_path.is_file()
-    assert "likelihood" in output_type.lower() or "uncertaint" in output_type.lower()
+    # assert "likelihood" in output_type.lower() or "uncertaint" in output_type.lower()
 
     #  create output layer metadata
     results = ProspectivityOutputLayer(**{
@@ -387,3 +422,74 @@ def send_processed_evidence_layer(
         print(resp.status_code)
         print(resp.text)
         print("debug")
+
+
+def find_folder(
+    base_path: Path,
+    str_text: str = 'test/loss'
+):
+    for root, dirs, files in os.walk(base_path):
+        if 'wandb-summary.json' in files:
+            json_path = os.path.join(root, 'wandb-summary.json')
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+                if str_text in data:
+                    return os.path.dirname(root)
+    return None
+
+def create_zip_file(
+    zip_path: Path,
+    files_to_zip: List[str]
+) -> None:
+    # """
+    # Create a zip file from a list of file paths.
+
+    # :param zip_path: Path to the output zip file.
+    # :param files_to_zip: List of file paths to include in the zip file.
+    # """
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        for file_path in files_to_zip:
+            zipf.write(file_path, Path(file_path).name)
+
+
+def reorganize_metrics_file(data: dict, output_file: Path):
+    class Metric(BaseModel):
+        name: str
+        value: float
+        description: str
+
+    class ModelRunMetrics(BaseModel):
+        train: List[Metric]
+        valid: List[Metric]
+        test: List[Metric]
+    def create_metrics_list(prefix: str) -> List[Metric]:
+        allowed_metrics = {
+            'auc'           : 'Area Under the Receiver Operating Characteristic Curve (AUROC), measures the ability of a model to distinguish between classes (Note: not ideal metric for imbalanced datasets)',
+            'auc_best'      : 'Best AUROC',
+            'auprc'         : 'Area Under the Precision-Recall Curve, evaluates the trade-off between precision and recall',
+            'auprc_best'    : 'Best AUPRC',
+            'acc'           : 'Accuracy, the ratio of correctly predicted instances to the total instances (Note: not ideal metric for imbalanced datasets)',
+            'f1'            : 'F1 Score, the harmonic mean of precision and recall',
+            'f1_best'       : 'Best F1 Score',
+            'mcc'           : 'Matthews Correlation Coefficient, measures the quality of binary classifications',
+            'bal_acc'       : 'Balanced Accuracy, the average of recall obtained on each class',
+            'loss'          : 'Loss=Binary Cross Entropy, the error rate of the model',
+        }
+        return [
+            Metric(
+                name=key.split('/')[-1],
+                value=value,
+                description=allowed_metrics[key.split('/')[-1]]
+            )
+            for key, value in data.items()
+            if key.startswith(prefix) and key.split('/')[-1] in allowed_metrics
+        ]
+
+    metrics = ModelRunMetrics(
+        train=create_metrics_list('train'),
+        valid=create_metrics_list('val'),
+        test=create_metrics_list('test')
+    )
+
+    with open(output_file, 'w') as f:
+        json.dump(metrics.dict(), f, indent=4)

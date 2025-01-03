@@ -233,13 +233,14 @@ class CMALitModule(LightningModule):
 
         # update and log metrics
         self.val_loss(loss.item())
-        self.val_auc(preds, targets)
-        self.val_auprc(preds.squeeze(), targets.squeeze().to(torch.int))
-        self.val_f1(preds.squeeze(), targets.squeeze().to(torch.int))
+        self.val_auc(preds.squeeze(-1), targets.to(torch.int))
+        self.val_auprc(preds.squeeze(-1), targets.to(torch.int))
+        self.val_f1(preds.squeeze(-1), targets.to(torch.int))
         self.log("val/loss",    self.val_loss,  on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc",     self.val_auc,   on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auprc",   self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/f1",      self.val_f1,    on_step=False, on_epoch=True, prog_bar=True)
+
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
@@ -267,14 +268,14 @@ class CMALitModule(LightningModule):
 
         # update and log metrics
         self.test_loss(loss.item())
-        self.test_auc(preds, targets)
-        self.test_auprc(preds.squeeze(), targets.squeeze().to(torch.int))
-        self.test_bal_acc((preds.squeeze() > self.hparams.threshold).to(torch.int), targets)
-        self.test_acc(preds.squeeze(), targets)
-        self.test_mcc(preds.squeeze(), targets)
-        self.test_f1(preds.squeeze(), targets)
-        self.test_recall(preds.squeeze(), targets)
-        self.test_acc1(preds.squeeze(), torch.ones_like(preds.squeeze()))
+        self.test_auc(preds.squeeze(-1), targets.to(torch.int))
+        self.test_auprc(preds.squeeze(-1), targets.to(torch.int))
+        self.test_bal_acc((preds.squeeze(-1) > self.hparams.threshold).to(torch.int), targets.to(torch.int))
+        self.test_acc(preds.squeeze(-1), targets.to(torch.int))
+        self.test_mcc(preds.squeeze(-1), targets.to(torch.int))
+        self.test_f1(preds.squeeze(-1), targets.to(torch.int))
+        self.test_recall(preds.squeeze(-1), targets.to(torch.int))
+        self.test_acc1(preds.squeeze(-1), torch.ones_like(preds.squeeze(-1)))
 
         self.log("test/loss",    self.test_loss,      on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/auc",     self.test_auc,       on_step=False, on_epoch=True, prog_bar=True)
@@ -285,6 +286,7 @@ class CMALitModule(LightningModule):
         self.log("test/f1",      self.test_f1,        on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/recall",  self.test_recall,    on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/prob1",   self.test_acc1,      on_step=False, on_epoch=True, prog_bar=True)
+
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""

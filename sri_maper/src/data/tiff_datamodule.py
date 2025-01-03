@@ -180,7 +180,7 @@ class TIFFDataModule(LightningDataModule):
             persistent_workers=self.hparams.num_workers > 0,
         )
 
-    def val_dataloader(self, shuffle: bool = False) -> DataLoader[Any]:
+    def val_dataloader(self, shuffle: bool = False, drop_last: bool = False) -> DataLoader[Any]:
         """Create and return the validation dataloader.
 
         :return: The validation dataloader.
@@ -191,6 +191,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=shuffle,
+            drop_last=drop_last,
             persistent_workers=self.hparams.num_workers > 0,
         )
 
@@ -205,6 +206,7 @@ class TIFFDataModule(LightningDataModule):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
+            # drop_last=True,
             persistent_workers=self.hparams.num_workers > 0,
         )
 

@@ -133,7 +133,7 @@ setup(
         "ipywidgets",
         "scikit-learn",
         "imbalanced-learn",
-        "cdr_schemas @ git+https://github.com/DARPA-CRITICALMAAS/cdr_schemas.git@v0.4.5",
+        "cdr_schemas @ git+https://github.com/DARPA-CRITICALMAAS/cdr_schemas.git@v0.4.17",
         "python-dotenv",
         "pydantic_settings",
         "fastapi",
