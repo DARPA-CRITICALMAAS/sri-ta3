@@ -13,7 +13,8 @@ docker run --rm -it --gpus all -p 8888:8888 \
     -v ${DATA_PATH}:/workspace/data \
     -v ${LOGS_PATH}:/workspace/logs \
     -v ${PROJ_ROOT}/${SRC_PATH}:/workspace/${SRC_PATH} \
-    -e NAMESPACE -e SYSTEM_NAME -e SYSTEM_VERSION -e SYSTEM_DESCRIPTION \
-    -e CDR_TOKEN -e CDR_HOST -e NGROK_AUTHTOKEN \
+    -e NAMESPACE -e SYSTEM_NAME -e SYSTEM_VERSION -e SYSTEM_DESCRIPTION -e MODEL_NAME -e MODEL_VERSION \
+    -e CDR_TOKEN -e CDR_HOST -e CALLBACK_URL \
+    -e NGROK_AUTHTOKEN -e NGROK_SECRET -e NGROK_PORT \
     -e JOB_TAG -e REPO_HOST -e DUSER -e WANDB_API_KEY \
     ${REPO_HOST}/${REPO}:${SYSTEM_NAME}-${DUSER}-v${SYSTEM_VERSION} bash

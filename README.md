@@ -59,22 +59,26 @@ The directory structure looks like this:
 │   ├── notebooks              <- Jupyter notebooks
 │   │
 │   ├── src                    <- Source code
-│   │   ├── data                    <- Data code
-│   │   ├── models                  <- Model code
-│   │   ├── utils                   <- Utility code
+│   │   ├── data                    <- Folder with data code
+│   │   ├── models                  <- Folder with model code
+│   │   ├── utils                   <- Folder with utility code
 │   │   │
-│   │   ├── __init__.py         <- python module __init__
-│   │   ├── map.py              <- Run mapping via CLI
-│   │   ├── pretrain.py         <- Run pretraining via CLI
-│   │   ├── test.py             <- Run testing via CLI
-│   │   └── train.py            <- Run training via CLI
+│   │   ├── __init__.py             <- python module __init__
+│   │   ├── map.py                  <- Run mapping via CLI
+│   │   ├── pretrain.py             <- Run pretraining via CLI
+│   │   ├── scripted_server.py      <- Run scripted server via CLI
+│   │   ├── server.py               <- Run server via CLI
+│   │   ├── test.py                 <- Run testing via CLI
+│   │   ├── train_test_map.py       <- Run training, testing, and mapping via CLI
+│   │   └── train.py                <- Run training via CLI
 │   │
 │   ├── __init__.py        <- python module __init__
 │
 ├── .gitignore                <- List of files ignored by git
-├── LICENSE.txt               <- License for code repo
+├── MIT-LICENSE.txt           <- License for code repo
 ├── project_vars.sh           <- Project variables for infrastructure
 ├── setup.py                  <- File for installing project as a package
+├── start.sh                  <- File for initializing server
 └── README.md
 ```
 
@@ -112,7 +116,7 @@ source project_vars.sh
 # installs from source code
 python3 -m pip install -e .
 ```
-*If installation succeeded without errors,* you should be able to run the SRI TA3 server. Skip to [SRI TA3 server](<#SRI-TA3-server>).
+*If installation succeeded without errors,* you should be able to run the SRI TA3 server. Skip to [SRI TA3 server](#sri-ta3-server).
 
 ### Install with docker container that is run locally
 This setup is slightly more involved but provides more robustness across physical devices by using docker. We've written convenience [bash scripts](./docker) to make building and running the docker container much eaiser. First, clone the repo locally.
@@ -121,22 +125,24 @@ This setup is slightly more involved but provides more robustness across physica
 git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
 cd sri-ta3
 ```
-Next, edit the variables in [project_vars.sh](project_vars.sh) relevant to your use case. Typically, one needs to edit `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY`, `CDR_TOKEN`, `CDR_HOST`, and `NGROK_AUTHTOKEN`. After editing [project_vars.sh](project_vars.sh), build and run the docker image. Below are example commands to do so using the conenivence scripts.
+Next, edit the variables in [project_vars.sh](project_vars.sh) relevant to your use case. Typically, one needs to edit `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY`, `CDR_TOKEN`, `CDR_HOST`, and `NGROK_AUTHTOKEN` or `CALLBACK_URL` (if running on the USGS AWS). `Note:` For the USGS AWS environment, ensure that the `CALLBACK_URL` variable ends with `/hook`.
+
+After editing [project_vars.sh](project_vars.sh), build and run the docker image. Below are example commands to do so using the convenience scripts.
 ```bash
 # builds docker image (installing source in image) and pushes to docker repo
 bash docker/run_docker_build_push.sh
 # runs docker image
 bash docker/run_docker_local.sh
 ```
-Optionally, if you would like to override the default `logs` and `data` folders within this repo that are empty to use exisitng ones (e.g. on datalake) that might contain existing logs and data, simply mount (or overwite) the corresponding folders on the datalake to the empty `logs` and `data` folders within this repo. Below are examles commands to do so.
+Optionally, if you would like to override the default `logs` and `data` folders within this repo that are empty to use exisitng ones (e.g., on datalake) that might contain existing logs and data, simply mount (or overwite) the corresponding folders on the datalake to the empty `logs` and `data` folders within this repo. Below are examles commands to do so.
 ```bash
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/logs ./logs
 sudo mount.cifs -o username=${USER},domain=sri,uid=$(id -u),gid=$(id -g) /datalake/path/to/existing/data ./data
 ```
-*If installation succeeded without errors,* you should be able to run the SRI TA3 server. Skip to [SRI TA3 server](<#SRI-TA3-server>).
+*If installation and deployment succeeded without errors,* the SRI TA3 server will now be runnning (by default) or you can to run the SRI TA3 server manually. See [SRI TA3 server](#sri-ta3-server) section.
 
 ### Install with docker container that is run on the SRI International Kubernetes cluster
-This setup is slightly more involved but provides more scalability to use more compute by using docker and Kubernetes. First we'll need to prepare some folders on the datalake to contain your data, code, and logs. Under the `criticalmaas-ta3` folder (namespace) within the `vt-open` datalake, make the following directory structure for YOUR use using your employee ID number (i.e. eXXXXX). NOTE, you only need to make the folders with the comment `CREATE` in it, the others should exist already. **Be careful not to corrupt the folders of other users or namespaces.**
+This setup is slightly more involved but provides more scalability to use more compute by using docker and Kubernetes. First we'll need to prepare some folders on the datalake to contain your data, code, and logs. Under the `criticalmaas-ta3` folder (namespace) within the `vt-open` datalake, make the following directory structure for YOUR use using your employee ID number (i.e., eXXXXX). NOTE, you only need to make the folders with the comment `CREATE` in it, the others should exist already. **Be careful not to corrupt the folders of other users or namespaces.**
 ```
 vt-open
 ├── ... # other folders for other namespaces - avoid
@@ -162,7 +168,9 @@ Last, we'll install the repo. We've written convenience [bash scripts](./docker)
 git clone https://github.com/DARPA-CRITICALMAAS/sri-ta3.git
 cd sri-ta3
 ```
-Next, edit the variables in [project_vars.sh](project_vars.sh) relevant to your use case. Typically, one needs to edit `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY`, `CDR_TOKEN`, `CDR_HOST`, and `NGROK_AUTHTOKEN`. After editing [project_vars.sh](project_vars.sh), build and run the docker image. Below are example commands to do so using the conenivence scripts.
+Next, edit the variables in [project_vars.sh](project_vars.sh) relevant to your use case. Typically, one needs to edit `JOB_TAG` `REPO_HOST`, `DUSER`, `WANDB_API_KEY`, `CDR_TOKEN`, `CDR_HOST`, and `NGROK_AUTHTOKEN` or `CALLBACK_URL` (if running on the USGS AWS). `Note:` For the USGS AWS environment, ensure that the `CALLBACK_URL` variable ends with `/hook`.
+
+After editing [project_vars.sh](project_vars.sh), build and run the docker image. Below are example commands to do so using the convenience scripts.
 ```bash
 # builds docker image (installing source in image) and pushes to docker repo
 bash docker/run_docker_build_push.sh
@@ -170,14 +178,21 @@ bash docker/run_docker_build_push.sh
 bash docker/run_docker_local.sh
 ```
 
-*If installation succeeded without errors,* you should be able to run the SRI TA3 server. Skip to [SRI TA3 server](<#SRI-TA3-server>).
+*If installation and deployment succeeded without errors,* the SRI TA3 server will now be runnning (by default) or you can to run the SRI TA3 server manually.
 
 ## SRI TA3 server
-Assuming the installation above succeeded. You should now be in a bash terminal that can run the SRI TA3 server now. Run the following to start the server:
+Assuming the installation and deployment above were successful, the server will automatically initialize on the Docker server inside a `tmux` session named `server` (see the [tmux GitHub page](https://github.com/tmux/tmux/wiki) for more information about `tmux`).
+
+To accees it inside the Docker container:
+```bash
+tmux a -t server
+```
+
+Alternatively, if the `tmux` session was terminated by the user, you can start the SRI TA3 server manually using a bash command inside the Docker container terminal. Run the following command to start the server:
 ```bash
 python sri_maper/src/server.py
 ```
-If the server runs successfully, it will register with the configured [CDR](https://github.com/DARPA-CRITICALMAAS/cdr) instance and then wait for mineral assessment job requests to be made via the [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) instance. The output should be similar to the following:
+In any case, if the server runs successfully, it will register with the configured [CDR](https://github.com/DARPA-CRITICALMAAS/cdr) instance and then wait for mineral assessment job requests to be made via the [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) instance. The output should be similar to the following:
 ```bash
 Registering with CDR
 Starting TA3 server
@@ -191,3 +206,65 @@ You can now start mineral assessments by interacting with the [StatMagic](https:
 Below is a video demonstrating how the SRI TA3 server processes a mineral assessment job initiated from the StatMagic GUI:
 
 [![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/N4uB3mt2COM/0.jpg)](https://youtu.be/N4uB3mt2COM)
+
+### SRI TA3 server when `Model run ID` is known (no listening server required)
+Assuming the installation and deployment above were successful, and you have already started the mineral assessment through [StatMagic](https://github.com/DARPA-CRITICALMAAS/mtri-statmagic-web) GUI https://statmagic.mtri.org/ and received the `Model run ID` from the GUI (e.g., `b6010267d26241d082f6003d35e83909`). Then it is possible to run the entire SRI TA3 MAPER pipeline (including pretraining, training, testing, map generation, and uploading output files back to CDR) without initializing a listening server.
+
+Run the following to start our pipeline:
+
+```bash
+python sri_maper/src/scripted_server.py --event_id='Model run ID'
+### example
+python sri_maper/src/scripted_server.py --event_id='b6010267d26241d082f6003d35e83909'
+```
+
+## Experiments via Command-Line-Interface (CLI)
+### General Usage
+
+It is important to remember, this tool IS EXTENSIBLE. MAPER is built to be fully controlled from the experiment configuration. This design supports integration across TAs and offers the domain experts full control over MAPER **without modifying source code, notebook files, etc**. Below is a more general background of commands one can use with MAPER's CLI
+
+Using the CLI is the suggested method of integration into the MAPER code. As additional documentation, we provide [example notebook files](./sri_maper/notebooks/) that use the CLI internally within the jupyter notebook files. However, all actions performed in the jupyter notebook can be performed with the CLI (the notebooks just call the CLI functions internally). We suggest viewing the notebooks files as is (i.e., without running) to understand the CLI, then experiment with using the CLI directly.
+
+Below we give examples of the `train`, `test`, `map` (`train+test+map` functionality exists), and `pretrain` capabilties through the CLI. The section that follows gives background about the example notebook files.
+
+You can choose your training hardware like this:
+
+```bash
+# train on CPU
+python sri_maper/src/train.py trainer=cpu
+
+# train on GPU
+python sri_maper/src/train.py trainer=gpu
+```
+
+You can run a predefined experiment from [sri_maper/configs/experiment/template/](sri_maper/configs/experiment/template/) like this:
+
+```bash
+python sri_maper/src/train.py experiment=[example]
+```
+
+You can override any parameter from command line like this
+
+```bash
+python sri_maper/src/train.py trainer.max_epochs=20 data.batch_size=64
+```
+
+You can pretain a model like this
+
+```bash
+python sri_maper/src/pretrain.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
+```
+
+You can test an existing checkpoint like this
+
+```bash
+python sri_maper/src/test.py ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
+```
+
+You can build prospectivity maps using an existing model checkpoint like this:
+```bash
+python sri_maper/src/map.py +experiment=[example] ckpt_path=<PATH_TO_CHECKPOINT/*.ckpt>
+```
+
+### Point of contact
+If these troubleshooting steps did not resolve your problem, please contact Angel Daruna (`angel.daruna@sri.com`) or Vasily Zadorozhnyy (`vasily.zadorozhnyy@sri.com`) to troubleshoot. You can also create an issue, PR, etc.

@@ -29,8 +29,8 @@ from sri_maper.src.pretrain import pretrain
 from sri_maper.src.train import train
 from sri_maper.src.map import build_map
 
-bot_token = None
-auth_token = None
+bot_token = '8142944313:AAHWB2dDsm04unsIxMHgPBOKJnB8gNeqS2Q'
+auth_token = 'DEqAkyLtL4'
 
 def get_authorized_chat_ids():
     """Fetch chat IDs of users who sent the correct token"""
@@ -47,6 +47,7 @@ def get_authorized_chat_ids():
         return chat_ids if chat_ids else ['5186897455']  # Fallback to original chat ID
     return ['5186897455']
 
+
 def send_telegram_message(message_body):
     chat_ids = get_authorized_chat_ids()
     for chat_id in chat_ids:
@@ -59,6 +60,7 @@ def send_telegram_message(message_body):
         if response.status_code != 200:
             print(f"Failed to send message to chat ID {chat_id}: {response.text}")
 
+
 def run_ta3_pipeline(
     event_id: int,
     app_settings: utils.CDR_Settings
@@ -66,28 +68,28 @@ def run_ta3_pipeline(
     try:
         print("Querying CDR for event.")
         model_event_json = utils.get_event_payload_result(id=event_id, app_settings=app_settings)
-        if bot_token: send_telegram_message(f"[1/16]: New CMA: {model_event_json['event']['payload']['cma']['description']} ({event_id}) 👀")
-        if bot_token: send_telegram_message(f"[2/16]: Queried CDR for event ✅")
+        if bot_token: send_telegram_message(f"[1/17]: New CMA: {model_event_json['event']['payload']['cma']['description']} ({event_id}) 👀")
+        if bot_token: send_telegram_message(f"[2/17]: Queried CDR for event ✅")
 
         print("Parsing CDR event payload.")
         model_event_obj = utils.parse_event_payload_result(model_event_json)
-        if bot_token: send_telegram_message(f"[3/16]: Parsed CDR event payload ✅")
+        if bot_token: send_telegram_message(f"[3/17]: Parsed CDR event payload ✅")
 
         print("Generating AOI geopackage.")
         aoi_geopkg_path = utils.create_aoi_geopkg(model_event_obj)
-        if bot_token: send_telegram_message(f"[4/16]: Generated AOI geopackage ✅")
+        if bot_token: send_telegram_message(f"[4/17]: Generated AOI geopackage ✅")
 
         print("Downloading preprocessed evidence and label rasters.")
         processed_evidence_layer_paths, processed_label_raster_path, number_of_deposits, num_of_pixels = utils.download_preprocessed_layers(model_event_obj)
         print(f'This CMA has {number_of_deposits} deposits.')
-        if bot_token: send_telegram_message(f"[5/16]: Downloaded {len(processed_evidence_layer_paths)} preprocessed evidence and 1 label rasters | # of depos.={number_of_deposits} | # of pixels={num_of_pixels} ✅")
+        if bot_token: send_telegram_message(f"[5/17]: Downloaded {len(processed_evidence_layer_paths)} preprocessed evidence and 1 label rasters | # of depos.={number_of_deposits} | # of pixels={num_of_pixels} ✅")
 
         print("Creating a raster stack.")
         raster_stack_path = preprocessing.generate_raster_stack(
             evidence_layer_paths=processed_evidence_layer_paths,
             label_raster_path=processed_label_raster_path
         )
-        if bot_token: send_telegram_message(f"[6/16]: Created a raster stack ✅")
+        if bot_token: send_telegram_message(f"[6/17]: Created a raster stack ✅")
 
         print("Creating raster stack .yaml file.")
         raster_stack_yaml_path = preprocessing.create_raster_stack_yaml(
@@ -96,35 +98,109 @@ def run_ta3_pipeline(
             label_raster_path=processed_label_raster_path,
             raster_stack_path=raster_stack_path
         )
-        if bot_token: send_telegram_message(f"[7/16]: Created raster stack .yaml file ✅")
+        if bot_token: send_telegram_message(f"[7/17]: Created raster stack .yaml file ✅")
+
+        exposed_params_dict = model_event_obj.train_config.__dict__
+        exposed_overrides = []
+        exposed_pretrain_overrides = []
+        optuna_params_dict = {}
+        for key, value in exposed_params_dict.items():
+            if key == "fraction_train_split":
+                if value is not None:
+                    exposed_overrides.append(f"data.frac_train_split={model_event_obj.train_config.fraction_train_split}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"data.frac_train_split={x}"
+            elif key == "upsample_multiplier":
+                if value is not None:
+                    exposed_overrides.append(f"data.multiplier={model_event_obj.train_config.upsample_multiplier}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"data.multiplier={x}"
+            elif key == "learning_rate":
+                if value is not None:
+                    exposed_overrides.append(f"model.optimizer.lr={model_event_obj.train_config.learning_rate}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"model.optimizer.lr={x}"
+            elif key == "weight_decay":
+                if value is not None:
+                    exposed_overrides.append(f"model.optimizer.weight_decay={model_event_obj.train_config.weight_decay}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"model.optimizer.weight_decay={x}"
+            elif key == "smoothing":
+                if value is not None:
+                    exposed_overrides.append(f"model.smoothing={model_event_obj.train_config.smoothing}")
+                else:
+                    optuna_params_dict[key] = lambda x: f"model.smoothing={x}"
+            elif key == "likely_negative_range":
+                if value is not None:
+                    exposed_overrides.append(f"data.likely_neg_range={list(model_event_obj.train_config.likely_negative_range)}")
+                else:
+                    optuna_params_dict[key] = lambda x,y: f"data.likely_neg_range={[x,y]}"
+            elif key == "dropout_tuple":
+                if value is not None:
+                    exposed_overrides.append(f"model.net.dropout_rate={list(model_event_obj.train_config.dropout_tuple)}")
+                else:
+                    optuna_params_dict[key] = lambda x,y,z: f"model.net.dropout_rate={[x,y,z]}"
+            elif key == "random_seed":
+                if value is not None:
+                    exposed_overrides.append(f"seed={model_event_obj.train_config.random_seed}")
+            elif key == "number_encoder_layers":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.encoder_layer={model_event_obj.train_config.number_encoder_layers}")
+                    exposed_overrides.append(f"model.net.backbone_net.encoder_layer={model_event_obj.train_config.number_encoder_layers}")
+            elif key == "number_encoder_heads":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.encoder_head={model_event_obj.train_config.number_encoder_heads}")
+                    exposed_overrides.append(f"model.net.backbone_net.encoder_head={model_event_obj.train_config.number_encoder_heads}")
+            elif key == "encoder_embedding_dim":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.enc_dim={model_event_obj.train_config.encoder_embedding_dim}")
+                    exposed_overrides.append(f"model.net.backbone_net.enc_dim={model_event_obj.train_config.encoder_embedding_dim}")
+            elif key == "number_decoder_layers":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.decoder_layer={model_event_obj.train_config.number_decoder_layers}")
+                    exposed_overrides.append(f"model.net.backbone_net.decoder_layer={model_event_obj.train_config.number_decoder_layers}")
+            elif key == "number_decoder_heads":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.decoder_head={model_event_obj.train_config.number_decoder_heads}")
+                    exposed_overrides.append(f"model.net.backbone_net.decoder_head={model_event_obj.train_config.number_decoder_heads}")
+            elif key == "decoder_embedding_dim":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.dec_dim={model_event_obj.train_config.decoder_embedding_dim}")
+                    exposed_overrides.append(f"model.net.backbone_net.dec_dim={model_event_obj.train_config.decoder_embedding_dim}")
+            else:
+                raise ValueError(f"Unexpected key: {key}")
 
         print("Pretraining MAE.")
-        pretrain_cfg = utils.build_hydra_config_notebook(
-            overrides=[
-                "experiment=pretrain_template.yaml",
-                f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
-                f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
-                f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
-                "logger=csv", # wandb logger has issues in notebooks
-                f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
-                f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
-                f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
-                f"data.tif_dir={raster_stack_path.parent}",
-                f"data.batch_size={64 if num_of_pixels < 50000 else 128 if num_of_pixels < 150000 else 256 if num_of_pixels < 500000 else 512 if num_of_pixels < 1000000 else 1024}",
-                f"model.net.input_dim={len(processed_evidence_layer_paths)}",
-                "paths.data_dir=data",
-                "paths.log_dir=logs",
-                "trainer=gpu",
-                "trainer.min_epochs=1",
-                f"trainer.max_epochs={40 if num_of_pixels < 50000 else 30 if num_of_pixels < 150000 else 20 if num_of_pixels < 300000 else 10}",
-            ]
-        )
+        pretrain_overrides = [
+            "experiment=pretrain_template.yaml",
+            "seed=1234",
+            f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+            f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+            f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
+            "logger=csv", # wandb logger has issues in notebooks
+            f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
+            f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+            f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+            f"data.tif_dir={raster_stack_path.parent}",
+            f"data.batch_size={64 if num_of_pixels < 50000 else 128 if num_of_pixels < 150000 else 256 if num_of_pixels < 500000 else 512 if num_of_pixels < 1000000 else 1024}",
+            f"model.net.input_dim={len(processed_evidence_layer_paths)}",
+            "paths.data_dir=data",
+            "paths.log_dir=logs",
+            f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+            f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+            # trainer args
+            "trainer=gpu",
+            "trainer.min_epochs=1",
+            f"trainer.max_epochs={40 if num_of_pixels < 50000 else 30 if num_of_pixels < 150000 else 20 if num_of_pixels < 500000 else 10 if num_of_pixels < 1000000 else 5}",
+            f"+pt_emb_flag={True if len(optuna_params_dict) > 0 else False}"
+        ]
+        pretrain_overrides += exposed_pretrain_overrides
+        pretrain_cfg = utils.build_hydra_config_notebook(overrides=pretrain_overrides)
         utils.print_config_tree(pretrain_cfg)
-        pretrain_metrics, pretrain_objs = pretrain(pretrain_cfg)
-        if bot_token: send_telegram_message(f"[8/16]: Finished pretraining MAE ✅")
+        _, pretrain_objs = pretrain(pretrain_cfg) #pretrain_metrics, pretrain_objs
+        if bot_token: send_telegram_message(f"[8/17]: Finished pretraining MAE ✅")
 
         print("Preparing classifier overrides")
-        backbone_ckpt_embeddings =  glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*.npy'))[0]
         backbone_ckpt = glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*psnr*.ckpt'))[0]
 
         fixed_overrides = [
@@ -144,55 +220,16 @@ def run_ta3_pipeline(
             "trainer.max_epochs=50",
             # data args
             f"data.tif_dir={raster_stack_path.parent}",
-            f"data.batch_size={16 if number_of_deposits < 25 else 32}", # if number_of_deposits < 50 else 128 if number_of_deposits > 100 else 64}",
+            f"data.batch_size={16 if number_of_deposits < 25 else 32}",
             # model args
             f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
-            f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
         ]
 
-        exposed_params_dict = model_event_obj.train_config.__dict__
-        exposed_overrides = []
-        optuna_params_dict = {}
-        for key, value in exposed_params_dict.items():
-            if key == "fraction_train_split":
-                if value:
-                    exposed_overrides.append(f"data.frac_train_split={model_event_obj.train_config.fraction_train_split}")
-                else:
-                    optuna_params_dict[key] = lambda x: f"data.frac_train_split={x}"
-            elif key == "upsample_multiplier":
-                if value:
-                    exposed_overrides.append(f"data.multiplier={model_event_obj.train_config.upsample_multiplier}")
-                else:
-                    optuna_params_dict[key] = lambda x: f"data.multiplier={x}"
-            elif key == "learning_rate":
-                if value:
-                    exposed_overrides.append(f"model.optimizer.lr={model_event_obj.train_config.learning_rate}")
-                else:
-                    optuna_params_dict[key] = lambda x: f"model.optimizer.lr={x}"
-            elif key == "weight_decay":
-                if value:
-                    exposed_overrides.append(f"model.optimizer.weight_decay={model_event_obj.train_config.weight_decay}")
-                else:
-                    optuna_params_dict[key] = lambda x: f"model.optimizer.weight_decay={x}"
-            elif key == "smoothing":
-                if value:
-                    exposed_overrides.append(f"model.smoothing={model_event_obj.train_config.smoothing}")
-                else:
-                    optuna_params_dict[key] = lambda x: f"model.smoothing={x}"
-            elif key == "likely_negative_range":
-                if value:
-                    exposed_overrides.append(f"data.likely_neg_range={list(model_event_obj.train_config.likely_negative_range)}")
-                else:
-                    optuna_params_dict[key] = lambda x,y: f"data.likely_neg_range={[x,y]}"
-            elif key == "dropout_tuple":
-                if value:
-                    exposed_overrides.append(f"model.net.dropout_rate={list(model_event_obj.train_config.dropout_tuple)}")
-                else:
-                    optuna_params_dict[key] = lambda x,y,z: f"model.net.dropout_rate={[x,y,z]}"
-            else:
-                raise ValueError(f"Unexpected key: {key}")
+        if len(optuna_params_dict) > 0:
+            backbone_ckpt_embeddings =  glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*.npy'))[0]
+            fixed_overrides.append(f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}")
 
-        if bot_token: send_telegram_message(f"[9/16]: Prepared {len(exposed_overrides)} GUI provided overrides ✅")
+        if bot_token: send_telegram_message(f"[9/17]: Prepared {len(exposed_overrides)} GUI provided overrides ✅")
 
         # add exposed (user provided) train configs (no optuna yet)
         fixed_overrides += exposed_overrides
@@ -203,12 +240,12 @@ def run_ta3_pipeline(
                                                                     optuna_params_dict,
                                                                     num_deposits=number_of_deposits,
                                                                     n_trials=min(30,10*int(len(optuna_params_dict))))
-
+            fixed_overrides.remove(f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}")
             fixed_overrides += optuna_overrides
-            if bot_token: send_telegram_message(f"[9.1/16]: Prepared {len(optuna_params_dict)} OPTUNA overrides ✅")
+            if bot_token: send_telegram_message(f"[9.1/17]: Prepared {len(optuna_params_dict)} OPTUNA overrides ✅")
 
         print("Training classifier using pretrained MAE.")
-        fixed_overrides.remove(f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}")
+
         fixed_overrides.append(f"model.net.backbone_ckpt={backbone_ckpt}")
         fixed_overrides.append("enable_attributions=True")
 
@@ -216,15 +253,15 @@ def run_ta3_pipeline(
         utils.print_config_tree(train_cfg)
         train_metrics, train_objs = train(train_cfg)
         train_cfg.ckpt_path = train_objs["trainer"].checkpoint_callback.best_model_path
-        if bot_token: send_telegram_message(f"[10/16]: Finished training classifier ✅")
+        if bot_token: send_telegram_message(f"[10/17]: Finished training classifier ✅")
 
         print("Generating maps.")
-        train_cfg.data.batch_size=128
+        train_cfg.data.batch_size=256
         output_map_paths, _ = build_map(train_cfg)
         lklhoods_n_uncerts_paths = [output_map_paths.pop(1), output_map_paths.pop(0)] # place Uncertainties.tif first
         feat_attr_paths = [Path(path) for path in output_map_paths]
         lklhoods_n_uncerts_paths = [Path(path) for path in lklhoods_n_uncerts_paths]
-        if bot_token: send_telegram_message(f"[11/16]: Generated {len(output_map_paths)} FA and {len(lklhoods_n_uncerts_paths)} LHD/UNCT maps ✅")
+        if bot_token: send_telegram_message(f"[11/17]: Generated {len(output_map_paths)} FA and {len(lklhoods_n_uncerts_paths)} LHD/UNCT maps ✅")
 
         print("Uploading Likelihoods and Uncertainties to CDR.")
         for path in tqdm(lklhoods_n_uncerts_paths):
@@ -234,7 +271,7 @@ def run_ta3_pipeline(
                 payload=model_event_obj,
                 app_settings=app_settings
             )
-        if bot_token: send_telegram_message(f"[12/16]: Uploaded LHD/UNCT to CDR ✅")
+        if bot_token: send_telegram_message(f"[12/17]: Uploaded LHD/UNCT to CDR ✅")
 
         print("Uploading feature attributes to CDR.")
         for path in tqdm(feat_attr_paths):
@@ -244,12 +281,14 @@ def run_ta3_pipeline(
                 payload=model_event_obj,
                 app_settings=app_settings
             )
-        if bot_token: send_telegram_message(f"[13/16]: Uploaded FA to CDR ✅")
+        if bot_token: send_telegram_message(f"[13/17]: Uploaded FA to CDR ✅")
 
         print("Packing and uploading .csv files into .zip.")
         base_path = lklhoods_n_uncerts_paths[0].parent
         zip_split_path = base_path / Path('splits.zip')
         files_splits = [base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')]
+        for split_path in files_splits:
+            utils.merge_splits_with_likelihoods_and_uncertainties(split_path, lklhoods_n_uncerts_paths[1], lklhoods_n_uncerts_paths[0])
         utils.create_zip_file(zip_split_path, files_splits)
         utils.send_output(
             output_type=zip_split_path.stem,
@@ -257,7 +296,7 @@ def run_ta3_pipeline(
             payload=model_event_obj,
             app_settings=app_settings
         )
-        if bot_token: send_telegram_message(f"[14/16]: Uploaded split_files.zip to CDR ✅")
+        if bot_token: send_telegram_message(f"[14/17]: Uploaded split_files.zip to CDR ✅")
 
         print("Packing and uploading metric .json file into .zip.")
         zip_metric_path = base_path / Path('metrics.zip')
@@ -270,7 +309,23 @@ def run_ta3_pipeline(
             payload=model_event_obj,
             app_settings=app_settings
         )
-        if bot_token: send_telegram_message(f"[15/16]: Uploaded metric_files.zip to CDR ✅")
+        if bot_token: send_telegram_message(f"[15/17]: Uploaded metric_files.zip to CDR ✅")
+
+        print("Packing and uploading plots file into .zip.")
+        zip_plots_path = base_path / Path('plots.zip')
+        files_plots = [
+            utils.plot_cross_predictions(base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')),
+            utils.plot_prediction_cdfs(base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')),
+            utils.plot_predictions_ranking(base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')),
+        ]
+        utils.create_zip_file(zip_plots_path, files_plots)
+        utils.send_output(
+            output_type=zip_plots_path.stem,
+            output_path=zip_plots_path,
+            payload=model_event_obj,
+            app_settings=app_settings
+        )
+        if bot_token: send_telegram_message(f"[16/17]: Uploaded plots.zip to CDR ✅")
 
         if len(optuna_params_dict) > 0:
             print("Packing and uploading optuna .json file into .zip.")
@@ -286,10 +341,10 @@ def run_ta3_pipeline(
                 payload=model_event_obj,
                 app_settings=app_settings
             )
-            if bot_token: send_telegram_message(f"[15.1/16]: Uploaded optuna_search_values.zip to CDR ✅")
+            if bot_token: send_telegram_message(f"[16.1/17]: Uploaded optuna_search_values.zip to CDR ✅")
 
         print(f"event_id={event_id} cma is finished!")
-        if bot_token: send_telegram_message(f"[16/16]: {model_event_json['event']['payload']['cma']['description']} ({event_id}) CMA is finished 🎉")
+        if bot_token: send_telegram_message(f"[17/17]: {model_event_json['event']['payload']['cma']['description']} ({event_id}) CMA is finished 🎉")
         if bot_token: send_telegram_message(f"")
 
     except Exception as e:

@@ -7,6 +7,7 @@ import json
 import zipfile
 import traceback
 from pathlib import Path
+from datetime import datetime
 
 # SRI TA3 specific imports
 from torch import set_float32_matmul_precision
@@ -54,7 +55,7 @@ def run_ta3_pipeline(
 
         print("Downloading preprocessed evidence and label rasters.")
         processed_evidence_layer_paths, processed_label_raster_path, number_of_deposits, num_of_pixels = utils.download_preprocessed_layers(model_event_obj)
-        print(f'This CMA has {number_of_deposits} deposits.')
+        print(f'This CMA has depos.={number_of_deposits} and pixels={num_of_pixels}.')
 
         print("Creating a raster stack.")
         raster_stack_path = preprocessing.generate_raster_stack(
@@ -70,59 +71,9 @@ def run_ta3_pipeline(
             raster_stack_path=raster_stack_path
         )
 
-        print("Pretraining MAE.")
-        pretrain_cfg = utils.build_hydra_config_notebook(
-            overrides=[
-                "experiment=pretrain_template.yaml",
-                f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
-                f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
-                f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
-                "logger=csv", # wandb logger has issues in notebooks
-                f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
-                f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
-                f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
-                f"data.tif_dir={raster_stack_path.parent}",
-                f"data.batch_size={64 if num_of_pixels < 50000 else 128 if num_of_pixels < 150000 else 256 if num_of_pixels < 500000 else 512 if num_of_pixels < 1000000 else 1024}",
-                f"model.net.input_dim={len(processed_evidence_layer_paths)}",
-                "paths.data_dir=data",
-                "paths.log_dir=logs",
-                "trainer=gpu",
-                "trainer.min_epochs=1",
-                f"trainer.max_epochs={40 if num_of_pixels < 50000 else 30 if num_of_pixels < 150000 else 20 if num_of_pixels < 300000 else 10}"
-            ]
-        )
-        utils.print_config_tree(pretrain_cfg)
-        pretrain_metrics, pretrain_objs = pretrain(pretrain_cfg)
-
-        print("Preparing classifier overrides")
-        backbone_ckpt_embeddings =  glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*.npy'))[0]
-        backbone_ckpt = glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*psnr*.ckpt'))[0]
-
-        fixed_overrides = [
-            "experiment=classifier_template.yaml",
-            f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
-            f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
-            f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
-            "logger=csv",
-            f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
-            "paths.data_dir=data",
-            "paths.log_dir=logs",
-            f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
-            f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
-            # trainer args
-            "trainer=gpu",
-            "trainer.min_epochs=25",
-            "trainer.max_epochs=50",
-            # data args
-            f"data.tif_dir={raster_stack_path.parent}",
-            f"data.batch_size={16 if number_of_deposits < 25 else 32}", # if number_of_deposits < 50 else 128 if number_of_deposits > 100 else 64}",
-            # model args
-            f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
-            f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}",
-        ]
-
         exposed_params_dict = model_event_obj.train_config.__dict__
         exposed_overrides = []
+        exposed_pretrain_overrides = []
         optuna_params_dict = {}
         for key, value in exposed_params_dict.items():
             if key == "fraction_train_split":
@@ -160,9 +111,96 @@ def run_ta3_pipeline(
                     exposed_overrides.append(f"model.net.dropout_rate={list(model_event_obj.train_config.dropout_tuple)}")
                 else:
                     optuna_params_dict[key] = lambda x,y,z: f"model.net.dropout_rate={[x,y,z]}"
+            elif key == "random_seed":
+                if value is not None:
+                    exposed_overrides.append(f"seed={model_event_obj.train_config.random_seed}")
+            elif key == "number_encoder_layers":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.encoder_layer={model_event_obj.train_config.number_encoder_layers}")
+                    exposed_overrides.append(f"model.net.backbone_net.encoder_layer={model_event_obj.train_config.number_encoder_layers}")
+            elif key == "number_encoder_heads":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.encoder_head={model_event_obj.train_config.number_encoder_heads}")
+                    exposed_overrides.append(f"model.net.backbone_net.encoder_head={model_event_obj.train_config.number_encoder_heads}")
+            elif key == "encoder_embedding_dim":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.enc_dim={model_event_obj.train_config.encoder_embedding_dim}")
+                    exposed_overrides.append(f"model.net.backbone_net.enc_dim={model_event_obj.train_config.encoder_embedding_dim}")
+            elif key == "number_decoder_layers":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.decoder_layer={model_event_obj.train_config.number_decoder_layers}")
+                    exposed_overrides.append(f"model.net.backbone_net.decoder_layer={model_event_obj.train_config.number_decoder_layers}")
+            elif key == "number_decoder_heads":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.decoder_head={model_event_obj.train_config.number_decoder_heads}")
+                    exposed_overrides.append(f"model.net.backbone_net.decoder_head={model_event_obj.train_config.number_decoder_heads}")
+            elif key == "decoder_embedding_dim":
+                if value is not None:
+                    exposed_pretrain_overrides.append(f"model.net.dec_dim={model_event_obj.train_config.decoder_embedding_dim}")
+                    exposed_overrides.append(f"model.net.backbone_net.dec_dim={model_event_obj.train_config.decoder_embedding_dim}")
             else:
                 raise ValueError(f"Unexpected key: {key}")
 
+        print("Pretraining MAE.")
+        # utils.jsonfile_message(
+        #     message="Pretraining MAE",
+        #     json_path=raster_stack_path.parent / f"model_status_{datetime.now().strftime('%Y%m%d%H%M')}.json",
+        #     payload=model_event_obj, app_settings=app_settings
+        # )
+
+        pretrain_overrides = [
+            "experiment=pretrain_template.yaml",
+            "seed=1234",
+            f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+            f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+            f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
+            "logger=csv", # wandb logger has issues in notebooks
+            f"logger.wandb.name=pretrain|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
+            f"tags=['pretrain','mae','ViT',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+            f"task_name=pretrain-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+            f"data.tif_dir={raster_stack_path.parent}",
+            f"data.batch_size={64 if num_of_pixels < 50000 else 128 if num_of_pixels < 150000 else 256 if num_of_pixels < 500000 else 512 if num_of_pixels < 1000000 else 1024}",
+            f"model.net.input_dim={len(processed_evidence_layer_paths)}",
+            "paths.data_dir=data",
+            "paths.log_dir=logs",
+            "trainer=gpu",
+            "trainer.min_epochs=1",
+            f"trainer.max_epochs={40 if num_of_pixels < 50000 else 30 if num_of_pixels < 150000 else 20 if num_of_pixels < 500000 else 10 if num_of_pixels < 1000000 else 5}",
+            f"+pt_emb_flag={True if len(optuna_params_dict) > 0 else False}",
+        ]
+        pretrain_overrides += exposed_pretrain_overrides
+        pretrain_cfg = utils.build_hydra_config_notebook(overrides=pretrain_overrides)
+        utils.print_config_tree(pretrain_cfg)
+        _, pretrain_objs = pretrain(pretrain_cfg) #pretrain_metrics, pretrain_objs
+
+        print("Preparing classifier overrides")
+        backbone_ckpt = glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*psnr*.ckpt'))[0]
+
+        fixed_overrides = [
+            "experiment=classifier_template.yaml",
+            f"preprocess.raster_stacks.0.raster_stack_path={str(raster_stack_path)}",
+            f"preprocess.raster_stacks.0.evidence_layer_paths={[str(layer_path) for layer_path in processed_evidence_layer_paths]}",
+            f"preprocess.raster_stacks.0.label_raster_path={[str(processed_label_raster_path)]}",
+            "logger=csv",
+            f"logger.wandb.name=train|{str(model_event_obj.cma.mineral)}|{str(model_event_obj.model_run_id)}",
+            "paths.data_dir=data",
+            "paths.log_dir=logs",
+            f"task_name=train-{str(model_event_obj.cma.mineral)}-{str(model_event_obj.model_run_id)}",
+            f"tags=['train','mae','ViT','frozen',{str(model_event_obj.model_run_id)},{str(model_event_obj.cma.mineral)}]",
+            # trainer args
+            "trainer=gpu",
+            "trainer.min_epochs=25",
+            "trainer.max_epochs=50",
+            # data args
+            f"data.tif_dir={raster_stack_path.parent}",
+            f"data.batch_size={16 if number_of_deposits < 25 else 32}",
+            # model args
+            f"model.net.backbone_net.input_dim={len(processed_evidence_layer_paths)}",
+        ]
+
+        if len(optuna_params_dict) > 0:
+            backbone_ckpt_embeddings =  glob.glob(os.path.join(pretrain_objs['trainer'].checkpoint_callback.dirpath, '*.npy'))[0]
+            fixed_overrides.append(f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}")
 
         # add exposed (user provided) train configs (no optuna yet)
         fixed_overrides += exposed_overrides
@@ -173,11 +211,10 @@ def run_ta3_pipeline(
                                                                     optuna_params_dict,
                                                                     num_deposits=number_of_deposits,
                                                                     n_trials=min(25,10*int(len(optuna_params_dict))))
-
             fixed_overrides += optuna_overrides
+            fixed_overrides.remove(f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}")
 
         print("Training classifier using pretrained MAE.")
-        fixed_overrides.remove(f"model.net.backbone_ckpt_embeddings={backbone_ckpt_embeddings}")
         fixed_overrides.append(f"model.net.backbone_ckpt={backbone_ckpt}")
         fixed_overrides.append("enable_attributions=True")
 
@@ -187,7 +224,7 @@ def run_ta3_pipeline(
         train_cfg.ckpt_path = train_objs["trainer"].checkpoint_callback.best_model_path
 
         print("Generating maps.")
-        train_cfg.data.batch_size=128
+        train_cfg.data.batch_size=256
         output_map_paths, _ = build_map(train_cfg)
         lklhoods_n_uncerts_paths = [output_map_paths.pop(1), output_map_paths.pop(0)] # place Uncertainties.tif first
         feat_attr_paths = [Path(path) for path in output_map_paths]
@@ -211,10 +248,12 @@ def run_ta3_pipeline(
                 app_settings=app_settings
             )
 
-        print("Packing and uploading .csv files into .zip.")
+        print("Packing and uploading splits .csv files into .zip.")
         base_path = lklhoods_n_uncerts_paths[0].parent
         zip_split_path = base_path / Path('splits.zip')
         files_splits = [base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')]
+        for split_path in files_splits:
+            utils.merge_splits_with_likelihoods_and_uncertainties(split_path, lklhoods_n_uncerts_paths[1], lklhoods_n_uncerts_paths[0])
         utils.create_zip_file(zip_split_path, files_splits)
         utils.send_output(
             output_type=zip_split_path.stem,
@@ -231,6 +270,21 @@ def run_ta3_pipeline(
         utils.send_output(
             output_type=zip_metric_path.stem,
             output_path=zip_metric_path,
+            payload=model_event_obj,
+            app_settings=app_settings
+        )
+
+        print("Packing and uploading plots file into .zip.")
+        zip_plots_path = base_path / Path('plots.zip')
+        files_plots = [
+            utils.plot_cross_predictions(base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')),
+            utils.plot_prediction_cdfs(base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')),
+            utils.plot_predictions_ranking(base_path / Path('train.csv'), base_path / Path('valid.csv'), base_path / Path('test.csv')),
+        ]
+        utils.create_zip_file(zip_plots_path, files_plots)
+        utils.send_output(
+            output_type=zip_plots_path.stem,
+            output_path=zip_plots_path,
             payload=model_event_obj,
             app_settings=app_settings
         )

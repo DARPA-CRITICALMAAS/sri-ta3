@@ -40,8 +40,15 @@ ENV PIP_CERT="/etc/ssl/certs/ca-certificates.crt" \
 RUN mkdir /workspace/data
 RUN mkdir /workspace/logs
 
+# Copy the entrypoint script
+COPY start.sh /workspace/start.sh
+RUN chmod +x /workspace/start.sh
+
+# Set the working directory
+WORKDIR /workspace
+
 # Expose port for JupyterLab
 EXPOSE 8888
 
-# Run JupyterLab by default
-CMD ["jupyter", "lab", "--allow-root", "--NotebookApp.token=''"]
+# Set the entrypoint to run the start script
+ENTRYPOINT ["/workspace/start.sh"]

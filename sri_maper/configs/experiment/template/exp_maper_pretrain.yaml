@@ -1,34 +1,30 @@
 # @package _global_
 
 defaults:
-  - override /preprocess: default.yaml
+  - override /preprocess: preprocess_template.yaml
   - override /model: maevit_pretrain
-  - override /trainer: ddp
+  - override /trainer: gpu # 'gpu' - single gpu | 'ddp' for multi-gpu
   - override /callbacks: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["some", "tags"]
-task_name: "task_name"
+tags: ["tags", "of", "your", "choice"] # <- add tags to your experiment
+task_name: "task_template" # <- update task name
 
 seed: 1234
 
 data:
   window_size: 5
   batch_size: 1024
-  tif_dir: "raster stack directory"
+  tif_dir: ${paths.data_dir}/template_folder # raster stack directory
   downsample: false
   oversample: false
   frac_train_split: 0.9
 
 model:
   net:
-    input_dim: 0
-    # encoder_layer: 2
-    # encoder_head: 4
-    # decoder_layer: 2
-    # decoder_head: 2
+    input_dim: 2
 
 trainer:
   min_epochs: 10

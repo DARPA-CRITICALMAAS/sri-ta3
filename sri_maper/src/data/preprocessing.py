@@ -861,14 +861,13 @@ def load_raster(
 
 
 def generate_raster_stacks(raster_stacks):
-    pass
-    # for raster_stack in tqdm(raster_stacks):
-    #     if not Path(raster_stack.raster_stack_path).is_file():
-    #         generate_raster_stack(
-    #             raster_stack.evidence_layer_paths,
-    #             raster_stack.label_raster_path,
-    #             raster_stack.window_size
-    #         )
+    for raster_stack in tqdm(raster_stacks):
+        if not Path(raster_stack.raster_stack_path).is_file():
+            generate_raster_stack(
+                evidence_layer_paths = [Path(path) for path in raster_stack.evidence_layer_paths],
+                label_raster_path = Path(raster_stack.label_raster_path[0]),
+                window_size = raster_stack.window_size
+            )
 
 
 def generate_raster_stack(
@@ -881,7 +880,7 @@ def generate_raster_stack(
     aligned and has imputed, outlier-removed, and scaled values.
 
     """
-    raster_stack_path = label_raster_path.parent.parent / 'raster_stack'
+    raster_stack_path = label_raster_path.parent.parent
     raster_stack_path.mkdir(parents=True, exist_ok=True)
     raster_stack_path = raster_stack_path / f'raster_stack_d{window_size}.tif'
 

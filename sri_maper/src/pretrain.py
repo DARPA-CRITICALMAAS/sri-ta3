@@ -14,7 +14,9 @@ log = utils.get_pylogger(__name__)
 
 
 @utils.task_wrapper
-def pretrain(cfg: DictConfig) -> Tuple[dict, dict]:
+def pretrain(
+    cfg: DictConfig,
+) -> Tuple[dict, dict]:
     """Trains the model. Can additionally evaluate on a testset, using best weights obtained during
     training.
     This method is wrapped in optional @task_wrapper decorator which applies extra utilities
@@ -85,14 +87,15 @@ def pretrain(cfg: DictConfig) -> Tuple[dict, dict]:
         log.info("Testing!")
         trainer.test(model=model, datamodule=datamodule)
 
-        log.info("Computing the pretrained model embeddings!")
-        model.net.encoder.patch_drop = DummyPatchDropLayer()
-        predictions = trainer.predict(model=model, datamodule=datamodule)
-        predictions = utils.collect_gpu_results(pt_concat(predictions).cpu().numpy(), trainer)
-        log.info(f"GPU:{trainer.strategy.global_rank} finished!")
-        if trainer.strategy.global_rank == 0:
-            log.info(f"GPU:{trainer.strategy.global_rank} is storing pretrained embeddings!")
-            utils.write_embeddings(predictions, Path(ckpt_path).parent, datamodule)
+        if cfg.pt_emb_flag:
+            log.info("Computing the pretrained model embeddings!")
+            model.net.encoder.patch_drop = DummyPatchDropLayer()
+            predictions = trainer.predict(model=model, datamodule=datamodule)
+            predictions = utils.collect_gpu_results(pt_concat(predictions).cpu().numpy(), trainer)
+            log.info(f"GPU:{trainer.strategy.global_rank} finished!")
+            if trainer.strategy.global_rank == 0:
+                log.info(f"GPU:{trainer.strategy.global_rank} is storing pretrained embeddings!")
+                utils.write_embeddings(predictions, Path(ckpt_path).parent, datamodule)
 
     test_metrics = trainer.callback_metrics
 

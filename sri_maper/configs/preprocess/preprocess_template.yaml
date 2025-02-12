@@ -1,0 +1,9 @@
+_target_: sri_maper.src.data.preprocessing.generate_raster_stacks
+raster_stacks:
+- raster_stack_path: ${data.tif_dir}/raster_stack_d${data.window_size}.tif
+  window_size: ${data.window_size}
+  evidence_layer_paths:
+  - ${data.tif_dir}/evidence_layers/raster_name_1.tif # <- rename 'raster_name_1.tif' to the name of the first raster layer
+  - ${data.tif_dir}/evidence_layers/raster_name_2.tif
+  label_raster_path:
+  - ${data.tif_dir}/evidence_layers/label_raster.tif # <- rename 'label_raster.tif' to the name of the label raster

@@ -9,16 +9,21 @@ import zipfile
 import httpx
 import json
 import ast
-from pydantic import BaseModel
+import rasterio
 
+import matplotlib.pyplot as plt
 from pathlib import Path
 import geopandas as gpd
 from tqdm import tqdm
-from typing import List
+from typing import List, Tuple
 import rasterio as rio
+import pandas as pd
 import numpy as np
 from rasterio.mask import mask
 from pydantic import BaseModel, Field
+from pyproj import Transformer
+from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import QuantileTransformer
 
 from cdr_schemas.cdr_responses.prospectivity import ProspectModelMetaData
 from cdr_schemas.prospectivity_input import (ProspectivityOutputLayer, SaveProcessedDataLayer)
@@ -493,3 +498,281 @@ def reorganize_metrics_file(data: dict, output_file: Path):
 
     with open(output_file, 'w') as f:
         json.dump(metrics.dict(), f, indent=4)
+
+
+def merge_splits_with_likelihoods_and_uncertainties(
+    split_file_path: Path,
+    likelihoods_path: Path,
+    uncertainties_path: Path,
+    dst_crs: str = 'EPSG:4326'
+) -> None:
+    # load .csv file
+    df = pd.read_csv(split_file_path)
+
+    # Load the likelihoods.tif file
+    with rasterio.open(likelihoods_path) as src:
+        likelihoods_data = src.read(1)
+        likelihoods_crs = src.crs
+    # Load the uncertainties.tif file
+    with rasterio.open(uncertainties_path) as src:
+        uncertainties_data = src.read(1)
+
+    df['likelihoods'] = df.apply(lambda row: likelihoods_data[int(row['y'])+2, int(row['x'])+2], axis=1)
+    df['uncertainties'] = df.apply(lambda row: uncertainties_data[int(row['y'])+2, int(row['x'])+2], axis=1)
+
+    # projecting lat/lon into `dst_crs` CRS
+    transform = Transformer.from_crs(likelihoods_crs, dst_crs, always_xy=True)
+
+    def reproject_coords(row):
+        lon, lat = transform.transform(row['lon'], row['lat'])
+        return pd.Series({'lon': lon, 'lat': lat})
+
+    dst_crs_safe = dst_crs.replace(':', '_')
+    df[[f'lon_{dst_crs_safe}', f'lat_{dst_crs_safe}']] = df.apply(reproject_coords, axis=1)
+
+    df.to_csv(split_file_path, index=False)
+
+
+def plot_cross_predictions(
+    train_file: Path,
+    valid_file: Path,
+    test_file: Path,
+    output_filename: str = "crossplot_predictions.png",
+    title: str = "Crossplot of Predictions",
+    figsize: Tuple[int, int] = (10, 8),
+) -> Path:
+    # Load the CSV files
+    train_df = pd.read_csv(train_file).drop_duplicates().reset_index(drop=True)
+    valid_df = pd.read_csv(valid_file).drop_duplicates().reset_index(drop=True)
+    test_df = pd.read_csv(test_file).drop_duplicates().reset_index(drop=True)
+
+    # Separate data into different groups
+    train_positives = train_df.loc[train_df['label'] == 1, 'likelihoods']
+    valid_positives = valid_df.loc[valid_df['label'] == 1, 'likelihoods']
+    test_positives = test_df.loc[test_df['label'] == 1, 'likelihoods']
+
+    train_unlabeled = train_df.loc[train_df['label'] == 0, 'likelihoods']
+    valid_unlabeled = valid_df.loc[valid_df['label'] == 0, 'likelihoods']
+    test_unlabeled = test_df.loc[test_df['label'] == 0, 'likelihoods']
+
+    # Combine data into a single list
+    data = [
+        train_unlabeled, valid_unlabeled, test_unlabeled,
+        train_positives, valid_positives, test_positives
+    ]
+    labels = [
+        'Train Unlabeled', 'Valid Unlabeled', 'Test Unlabeled',
+        'Train Positives', 'Valid Positives', 'Test Positives'
+    ]
+
+    # Create the plot
+    plt.figure(figsize=figsize)
+
+    # Draw violin plots manually
+    for i, group in enumerate(data):
+        parts = plt.violinplot(group, positions=[i], showmeans=True, showextrema=True, showmedians=True)
+
+        # Style the violin plot
+        for pc in parts['bodies']:
+            pc.set_facecolor('lightblue')
+            pc.set_alpha(0.5)
+        parts['cmeans'].set_color('red')      # Mean line
+        parts['cmedians'].set_color('orange') # Median line
+        parts['cbars'].set_color('black')     # Whiskers
+        parts['cmins'].set_color('black')     # Min value
+        parts['cmaxes'].set_color('black')    # Max value
+
+        # Add mean and median values as text annotations
+        mean_val = group.mean()
+        median_val = group.median()
+
+        # Position the text annotations
+        plt.text(i - 0.2, mean_val, f"Mean:\n{mean_val:.3f}",
+                color='red', ha='right', va='center', fontsize=10)
+        plt.text(i + 0.2, median_val, f"Median:\n{median_val:.3f}",
+                color='orange', ha='left', va='center', fontsize=10)
+
+    # Overlay box plots
+    for i, group in enumerate(data):
+        box = plt.boxplot(
+            group, positions=[i], widths=0.3, patch_artist=True, showmeans=True, meanline=True,
+            boxprops=dict(facecolor='none', color='black'),
+            medianprops=dict(color='orange', linewidth=2),
+            meanprops=dict(color='red', linewidth=2),
+            whiskerprops=dict(color='black'),
+            capprops=dict(color='black')
+        )
+
+    # Customize the plot
+    plt.xticks(ticks=range(len(labels)), labels=labels, rotation=20)
+    plt.ylabel('Predicted Likelihoods')
+    plt.title(title)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+    # Save the plot to a file
+    plt.tight_layout()
+    plt.savefig(train_file.parent / Path(output_filename), dpi=300)  # Save at 300 DPI for high quality
+    plt.close()
+
+    return train_file.parent / Path(output_filename)
+
+
+def plot_prediction_cdfs(
+    train_file: Path,
+    valid_file: Path,
+    test_file: Path,
+    output_filename: str = "cdf_predictions.png",
+    title: str = "Prediction CDFs",
+    figsize: Tuple[int, int] = (10, 6),
+) -> Path:
+    # Load the CSV files
+    train_df = pd.read_csv(train_file).drop_duplicates().reset_index(drop=True)
+    valid_df = pd.read_csv(valid_file).drop_duplicates().reset_index(drop=True)
+    test_df = pd.read_csv(test_file).drop_duplicates().reset_index(drop=True)
+
+    # Extract likelihoods for unlabeled and positive samples
+    train_positives = train_df.loc[train_df['label'] == 1, 'likelihoods'].values.flatten()
+    valid_positives = valid_df.loc[valid_df['label'] == 1, 'likelihoods'].values.flatten()
+    test_positives = test_df.loc[test_df['label'] == 1, 'likelihoods'].values.flatten()
+    train_unlabeled = train_df.loc[train_df['label'] == 0, 'likelihoods'].values.flatten()
+    valid_unlabeled = valid_df.loc[valid_df['label'] == 0, 'likelihoods'].values.flatten()
+    test_unlabeled = test_df.loc[test_df['label'] == 0, 'likelihoods'].values.flatten()
+
+    # Combine all values for quantile transformation
+    all_values = np.concatenate((train_positives, valid_positives, test_positives, train_unlabeled, valid_unlabeled, test_unlabeled), axis=0)
+    trans = QuantileTransformer(n_quantiles=10000, output_distribution='normal')
+    transformed_values = trans.fit_transform(all_values.reshape(-1, 1)).flatten()
+
+    # Split transformed values
+    n_train_pos = len(train_positives)
+    n_valid_pos = len(valid_positives)
+    n_test_pos = len(test_positives)
+    n_train_unlabeled = len(train_unlabeled)
+    n_valid_unlabeled = len(valid_unlabeled)
+    n_test_unlabeled = len(test_unlabeled)
+
+    train_positive_scores = transformed_values[:n_train_pos]
+    valid_positive_scores = transformed_values[n_train_pos:n_train_pos+n_valid_pos]
+    test_positive_scores = transformed_values[n_train_pos+n_valid_pos:n_train_pos+n_valid_pos+n_test_pos]
+    train_unlabeled_scores = transformed_values[n_train_pos+n_valid_pos+n_test_pos:n_train_pos+n_valid_pos+n_test_pos+n_train_unlabeled]
+    valid_unlabeled_scores = transformed_values[n_train_pos+n_valid_pos+n_test_pos+n_train_unlabeled:n_train_pos+n_valid_pos+n_test_pos+n_train_unlabeled+n_valid_unlabeled]
+    test_unlabeled_scores = transformed_values[n_train_pos+n_valid_pos+n_test_pos+n_train_unlabeled+n_valid_unlabeled:]
+
+    # Function to compute CDF
+    def compute_cdf(data):
+        sorted_data = np.sort(data)
+        cdf = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
+        return sorted_data, cdf
+
+    # Compute CDFs
+    train_unlabeled_sorted, cdf_train_unlabeled = compute_cdf(train_unlabeled_scores)
+    valid_unlabeled_sorted, cdf_valid_unlabeled = compute_cdf(valid_unlabeled_scores)
+    test_unlabeled_sorted, cdf_test_unlabeled = compute_cdf(test_unlabeled_scores)
+    train_pos_sorted, cdf_train_pos = compute_cdf(train_positive_scores)
+    valid_pos_sorted, cdf_valid_pos = compute_cdf(valid_positive_scores)
+    test_pos_sorted, cdf_test_pos = compute_cdf(test_positive_scores)
+
+    # Create the plot
+    plt.figure(figsize=figsize)
+    plt.plot(train_unlabeled_sorted, cdf_train_unlabeled, label='Train Unlabeled', color='black')
+    plt.plot(valid_unlabeled_sorted, cdf_valid_unlabeled, label='Valid Unlabeled', color='gray')
+    plt.plot(test_unlabeled_sorted, cdf_test_unlabeled, label='Test Unlabeled', color='lightgray')
+    plt.plot(train_pos_sorted, cdf_train_pos, label='Train Positives', color='blue', linestyle='dashed')
+    plt.plot(valid_pos_sorted, cdf_valid_pos, label='Valid Positives', color='green', linestyle='dashed')
+    plt.plot(test_pos_sorted, cdf_test_pos, label='Test Positives', color='orange', linestyle='dotted')
+
+    # Customize the plot
+    plt.title(title)
+    plt.xlabel('Transformed Likelihoods')
+    plt.ylabel('Cumulative Probability')
+    plt.legend()
+    plt.grid(alpha=0.3)
+
+    # Save the plot to a file
+    plt.tight_layout()
+    plt.savefig(train_file.parent / Path(output_filename), dpi=300)  # Save at 300 DPI for high quality
+    plt.close()  # Close the plot to free memory
+
+    return train_file.parent / Path(output_filename)
+
+
+def plot_predictions_ranking(
+    train_file: Path,
+    valid_file: Path,
+    test_file: Path,
+    output_filename: str = "ranking_predictions.png",
+    title: str = "Predictions Ranking of Known Resources",
+    figsize: Tuple[int, int] = (8, 6),
+) -> Path:
+    def process_dataset(file_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
+        # Load and preprocess data
+        df = pd.read_csv(file_path).drop_duplicates().reset_index(drop=True)
+
+        # Calculate percentiles for ALL predictions first
+        all_predictions = df['likelihoods'].values
+        percentile_ranks = np.argsort(np.argsort(all_predictions)) / len(all_predictions)
+
+        # Get percentiles only for positive cases
+        positives_mask = df['label'] == 1
+        positive_percentiles = percentile_ranks[positives_mask]
+
+        # Sort percentiles in descending order
+        sorted_percentiles = np.sort(positive_percentiles)[::-1]
+
+        # Create x-axis as percentage of positives
+        x_axis = np.linspace(0, 1, len(sorted_percentiles))
+
+        # Calculate AUC
+        auc = roc_auc_score(df['label'], df['likelihoods'])
+
+        return x_axis, sorted_percentiles, auc
+
+    # Process all datasets
+    datasets = {
+        "Training": (train_file, "blue", "o"),
+        "Validation": (valid_file, "green", "^"),
+        "Testing": (test_file, "orange", "s")
+    }
+
+    # Create the plot
+    plt.figure(figsize=figsize)
+
+    for name, (file_path, color, marker) in datasets.items():
+        x_axis, percentiles, auc = process_dataset(file_path)
+        plt.plot(x_axis, percentiles,
+                label=f"{name} (AUC: {auc:.3f})",
+                marker=marker, markersize=4, markevery=0.05,
+                color=color)
+
+    # Customize the plot
+    plt.title(title)
+    plt.xlabel("Percent of Resource")
+    plt.ylabel("Prediction Percentile")
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+
+    # Save the plot
+    plt.savefig(train_file.parent / Path(output_filename), dpi=300)
+    plt.close()
+
+    return train_file.parent / Path(output_filename)
+
+
+def jsonfile_message(
+    message: str,
+    json_path: Path,
+    payload,
+    app_settings,
+) -> None:
+    # create a json file with the message
+    with open(json_path, 'w') as f:
+        json.dump({"message": message}, f)
+    # send the json file to CDR
+    send_output(
+        output_type=json_path.stem,
+        output_path=json_path,
+        payload=payload,
+        app_settings=app_settings
+    )
